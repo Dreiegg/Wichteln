@@ -68,10 +68,22 @@ function mergeSharedState(localState, remote, opts){
   // current user has unsaved edits to avoid distracting jumps while they type.
   const preservePairsIfEditing = !!opts.preservePairsIfEditing;
   const currentUserId = opts.currentUserId;
+  // Determine authoritative pairs using timestamps when available, unless we're preserving
+  // local pairs because the current user is actively editing a wishlist.
+  const localUpdated = (localState && localState.meta && localState.meta.pairsUpdatedAt) ? localState.meta.pairsUpdatedAt : 0;
+  const remoteUpdated = (remote && remote.meta && remote.meta.pairsUpdatedAt) ? remote.meta.pairsUpdatedAt : 0;
   if(preservePairsIfEditing && currentUserId && wishlistDrafts[currentUserId]){
     merged.pairs = (localState && localState.pairs) ? localState.pairs : (remote.pairs || {});
+  } else if(remoteUpdated || localUpdated){
+    // choose the most recent update
+    if(remoteUpdated > localUpdated){
+      merged.pairs = remote.pairs || {};
+    } else {
+      merged.pairs = localState.pairs || {};
+    }
   } else {
-    merged.pairs = remote.pairs || {};
+    // fallback: prefer remote if present
+    merged.pairs = remote.pairs || localState.pairs || {};
   }
   merged.codenames = remote.codenames || {};
 
@@ -199,6 +211,11 @@ registerForm.addEventListener('submit', async e=>{
   const isAdmin = !!f.get('isAdmin');
   const adminKey = f.get('adminKey');
   state = await loadSharedData();
+  // Prevent new registrations after pairs have been drawn to avoid duplicate/overlapping codename assignments
+  if(state.pairs && Object.keys(state.pairs).length > 0){
+    alert('Registrierung deaktiviert: Die Ziehung wurde bereits durchgeführt. Bitte setze die Pairs zurück, um neue Nutzer hinzuzufügen.');
+    return;
+  }
   if(state.users.find(u=>u.username===username)){ alert('Benutzername bereits vergeben'); return; }
   // If an organizer secret is configured, require it for admin creation
   if(isAdmin && window.organizerSecret){
@@ -223,6 +240,8 @@ wishlistForm.addEventListener('submit', async e=>{
   await saveSharedData(state);
   // clear transient draft after successful save
   try{ delete wishlistDrafts[session.userId]; }catch(e){}
+  // refresh UI to reflect the persisted wishlist immediately
+  try{ render(); }catch(e){/* ignore */}
   alert('Wunschliste gespeichert');
 });
 
@@ -282,6 +301,9 @@ if(drawBtn){
     const pairs = {};
     for(let i=0;i<cycle.length;i++) pairs[cycle[i]] = cycle[(i+1)%cycle.length];
     state.pairs = pairs;
+    // mark when pairs were last updated so clients can resolve sync conflicts deterministically
+    state.meta = state.meta || {};
+    state.meta.pairsUpdatedAt = Date.now();
     await saveSharedData(state);
     render();
   });
@@ -296,7 +318,15 @@ if(exportPairs){
 }
 
 if(resetPairs){
-  resetPairs.addEventListener('click', async ()=>{ if(confirm('Pairs wirklich zurücksetzen?')){ state = await loadSharedData(); state.pairs = {}; await saveSharedData(state); render(); } });
+  resetPairs.addEventListener('click', async ()=>{ 
+    if(!confirm('Pairs wirklich zurücksetzen?')) return;
+    state = await loadSharedData();
+    state.pairs = {};
+    state.meta = state.meta || {};
+    state.meta.pairsUpdatedAt = Date.now();
+    await saveSharedData(state);
+    render(); 
+  });
 }
 
 // User management (delete/reset) removed — manage users via Firebase Console directly.
