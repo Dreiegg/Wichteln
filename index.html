@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Wichteln - Secret Santa</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <h1>Wichteln</h1>
+    <div id="nav"></div>
+  </header>
+
+  <main>
+    <section id="auth">
+      <div id="loginBox">
+        <h2>Anmelden</h2>
+        <form id="loginForm">
+          <label>Benutzername<input name="username" required></label>
+          <label>Passwort<input type="password" name="password" required></label>
+          <div class="row"><button type="submit">Anmelden</button> <button type="button" id="showRegister">Registrieren</button></div>
+        </form>
+      </div>
+
+      <div id="registerBox" class="hidden">
+        <h2>Registrieren</h2>
+        <form id="registerForm">
+          <label>Benutzername<input name="username" required></label>
+          <label>Anzeigename<input name="displayName"></label>
+          <label>Passwort<input type="password" name="password" required></label>
+          <label><input type="checkbox" name="isAdmin" id="isAdminCheckbox"> Als Admin registrieren (nur für Organisator)</label>
+          <label id="adminKeyLabel" class="hidden">Organisator-Passwort<input type="password" name="adminKey" id="adminKeyInput"></label>
+          <div class="row"><button type="submit">Registrieren</button> <button type="button" id="showLogin">Zurück</button></div>
+        </form>
+      </div>
+    </section>
+
+    <section id="dashboard" class="hidden">
+      <h2 id="welcome"></h2>
+
+      <div id="userArea">
+        <h3>Deine Wunschliste</h3>
+        <form id="wishlistForm">
+          <textarea id="wishlistInput" placeholder="Eine Wunschliste, ein Item pro Zeile"></textarea>
+          <div class="row"><button type="submit">Speichern</button></div>
+        </form>
+      </div>
+
+      <div id="assignedArea">
+        <h3>Person, die du beschenkst</h3>
+        <div id="assignedInfo">Noch keine Zuordnung vorhanden.</div>
+      </div>
+
+      <div id="adminArea" class="hidden">
+        <h3>Admin-Panel</h3>
+        <div class="row">
+          <button id="drawBtn">Draw (Wichtel verteilen)</button>
+          <button id="exportPairs">Exportiere Pairs (JSON)</button>
+          <button id="resetPairs">Pairs zurücksetzen</button>
+        </div>
+        <h4>Alle Nutzer</h4>
+        <ul id="usersList"></ul>
+
+        <h4>Aktuelle Pairs</h4>
+        <pre id="pairsView">(keine)</pre>
+      </div>
+
+      <div class="row"><button id="logoutBtn">Abmelden</button></div>
+    </section>
+  </main>
+
+  <footer>
+    <small>Client-seitige Demo — für GitHub Pages geeignet. Daten werden in deinem Browser gespeichert (localStorage).</small>
+  </footer>
+
+  <!-- Optional: Wenn du Firebase Firestore für geteilte/synchronisierte Daten nutzen willst,
+    erstelle eine Datei `firebase-config.js` basierend auf `firebase-config.js.example`.
+    Dann wird die App automatisch Firestore verwenden. -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
