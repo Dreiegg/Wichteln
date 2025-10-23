@@ -23,8 +23,15 @@ if(window && window.firebaseConfig){
 
 function loadData(){
   const raw = localStorage.getItem(LS_KEY);
-  if(!raw) return {users: [], pairs: {}};
-  try{ return JSON.parse(raw);}catch(e){return {users:[], pairs:{}}}
+  if(!raw) return {users: [], pairs: {}, codenames: {}};
+  try{
+    const parsed = JSON.parse(raw) || {};
+    // ensure shape compatibility for older data
+    parsed.users = parsed.users || [];
+    parsed.pairs = parsed.pairs || {};
+    parsed.codenames = parsed.codenames || {};
+    return parsed;
+  }catch(e){return {users:[], pairs:{}, codenames:{}}}
 }
 
 function saveDataLocal(d){ localStorage.setItem(LS_KEY, JSON.stringify(d)); }
@@ -42,6 +49,7 @@ async function loadSharedData(){
 async function saveSharedData(d){
   if(!useFirestore){ saveDataLocal(d); return; }
   try{
+    // Persist the full state (including codenames) to Firestore so codenames remain stable across devices.
     await firestoreDb.collection('shared').doc('wichteln').set(d);
     // also keep local copy
     saveDataLocal(d);
@@ -53,7 +61,7 @@ async function ensureInitialData(){
   const loaded = await loadSharedData();
   state = loaded || {users: [], pairs: {}, codenames: {}};
   if(state.users.length === 0){
-    const admin = {id: uid(), username: 'admin', displayName: 'Admin', pwd: 'admin', isAdmin: true, wishlist: ''};
+    const admin = {id: uid(), username: 'admin', pwd: 'admin', isAdmin: true, wishlist: ''};
     state.users.push(admin);
     await saveSharedData(state);
   }
@@ -114,8 +122,6 @@ registerForm.addEventListener('submit', async e=>{
   e.preventDefault();
   const f = new FormData(registerForm);
   const username = f.get('username').trim();
-  // No separate display name: use username as displayName
-  const displayName = username;
   const password = f.get('password');
   const isAdmin = !!f.get('isAdmin');
   const adminKey = f.get('adminKey');
@@ -125,7 +131,7 @@ registerForm.addEventListener('submit', async e=>{
   if(isAdmin && window.organizerSecret){
     if(!adminKey || adminKey !== window.organizerSecret){ alert('Falsches Organisator-Passwort, Admin-Erstellung nicht erlaubt'); return; }
   }
-  const user = {id: uid(), username, displayName, pwd: password, isAdmin, wishlist: ''};
+  const user = {id: uid(), username, pwd: password, isAdmin, wishlist: ''};
   state.users.push(user); await saveSharedData(state);
   // Auto-login the newly registered user so they can immediately edit their wishlist
   session.userId = user.id;
@@ -248,13 +254,18 @@ function render(){
   if(useFirestore){
     loadSharedData().then(remote => {
       try{
-        if(JSON.stringify(remote) !== JSON.stringify(localState)){
-          state = remote || {users: [], pairs: {}};
-          // update local cache
-          saveDataLocal(state);
-          // re-render once with the remote data
-          render();
-        }
+            if(JSON.stringify(remote) !== JSON.stringify(localState)){
+              // accept remote state (including codenames) so mappings stay consistent across devices
+              const r = remote || {users: [], pairs: {}, codenames: {}};
+              r.users = r.users || [];
+              r.pairs = r.pairs || {};
+              r.codenames = r.codenames || {};
+              state = r;
+              // update local cache
+              saveDataLocal(state);
+              // re-render once with the remote data
+              render();
+            }
       }catch(e){ console.warn('render: sync compare failed', e); }
     }).catch(e=>{ console.warn('render: loadSharedData failed', e); });
   }
@@ -269,11 +280,11 @@ function render(){
   auth.classList.add('hidden'); dashboard.classList.remove('hidden');
   const me = state.users.find(u=>u.id === session.userId);
   const myCode = codenameForId(me.id);
-  // For admins do not show codename alongside username/displayName
+  // Show username with codename only in the welcome line for non-admins (privacy elsewhere preserved)
   if(me.isAdmin){
-    welcome.textContent = `Willkommen, ${me.displayName || me.username}`;
+    welcome.textContent = `Willkommen, ${me.username}`;
   } else {
-    welcome.textContent = `Willkommen, ${me.displayName || me.username} (${myCode})`;
+    welcome.textContent = `Willkommen, ${me.username} (${myCode})`;
   }
   wishlistInput.value = me.wishlist || '';
 
