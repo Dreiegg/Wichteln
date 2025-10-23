@@ -202,23 +202,29 @@ if(credsForm){
   });
 }
 
-drawBtn.addEventListener('click', async ()=>{
-  state = await loadSharedData();
-  if(state.users.length < 2){ alert('Mindestens 2 Nutzer nötig'); return; }
-  const ids = state.users.map(u=>u.id);
-  const cycle = sattolo(ids.slice());
-  const pairs = {};
-  for(let i=0;i<cycle.length;i++) pairs[cycle[i]] = cycle[(i+1)%cycle.length];
-  state.pairs = pairs; await saveSharedData(state); render();
-});
+if(drawBtn){
+  drawBtn.addEventListener('click', async ()=>{
+    state = await loadSharedData();
+    if(state.users.length < 2){ alert('Mindestens 2 Nutzer nötig'); return; }
+    const ids = state.users.map(u=>u.id);
+    const cycle = sattolo(ids.slice());
+    const pairs = {};
+    for(let i=0;i<cycle.length;i++) pairs[cycle[i]] = cycle[(i+1)%cycle.length];
+    state.pairs = pairs; await saveSharedData(state); render();
+  });
+}
 
-exportPairs.addEventListener('click', async ()=>{
-  state = await loadSharedData();
-  const dataStr = JSON.stringify({users: state.users, pairs: state.pairs}, null, 2);
-  downloadText('wichteln_pairs.json', dataStr);
-});
+if(exportPairs){
+  exportPairs.addEventListener('click', async ()=>{
+    state = await loadSharedData();
+    const dataStr = JSON.stringify({users: state.users, pairs: state.pairs}, null, 2);
+    downloadText('wichteln_pairs.json', dataStr);
+  });
+}
 
-resetPairs.addEventListener('click', async ()=>{ if(confirm('Pairs wirklich zurücksetzen?')){ state = await loadSharedData(); state.pairs = {}; await saveSharedData(state); render(); } });
+if(resetPairs){
+  resetPairs.addEventListener('click', async ()=>{ if(confirm('Pairs wirklich zurücksetzen?')){ state = await loadSharedData(); state.pairs = {}; await saveSharedData(state); render(); } });
+}
 
 // Admin: delete user by username
 if(deleteUserBtn){
@@ -349,7 +355,12 @@ function render(){
   auth.classList.add('hidden'); dashboard.classList.remove('hidden');
   const me = state.users.find(u=>u.id === session.userId);
   const myCode = codenameForId(me.id);
-  welcome.textContent = `Willkommen, ${me.displayName || me.username} (${myCode})`;
+  // For admins do not show codename alongside username/displayName
+  if(me.isAdmin){
+    welcome.textContent = `Willkommen, ${me.displayName || me.username}`;
+  } else {
+    welcome.textContent = `Willkommen, ${me.displayName || me.username} (${myCode})`;
+  }
   wishlistInput.value = me.wishlist || '';
 
   // assigned: who you gift (receiver) and who gives you (giver)
@@ -358,8 +369,9 @@ function render(){
     if(state.pairs[me.id]){
       const assignedId = state.pairs[me.id];
       const assignedUser = state.users.find(u=>u.id === assignedId);
-      const assignedCode = codenameForId(assignedUser.id);
-      assignedInfo.innerHTML = `<strong>Du beschenkst:</strong> ${assignedUser.displayName||assignedUser.username} (${assignedCode})<br><pre>${(assignedUser.wishlist||'(keine)')}</pre>`;
+      // Show only the username (no codename) when displaying who you gift
+      const displayName = assignedUser.username;
+      assignedInfo.innerHTML = `<strong>Du beschenkst:</strong> ${displayName}<br><h4>Wunschliste von ${displayName}</h4><pre>${(assignedUser.wishlist||'(keine)')}</pre>`;
     } else {
       assignedInfo.innerHTML = 'Du beschenkst im Moment niemanden.';
     }
@@ -379,13 +391,15 @@ function render(){
 
   // admin
   adminArea.classList.toggle('hidden', !me.isAdmin);
-  usersList.innerHTML = '';
-  state.users.forEach(u=>{
-    const li = document.createElement('li');
-    const code = codenameForId(u.id);
-    li.innerHTML = `${u.displayName||u.username} (${code}) ${u.isAdmin?'<em>admin</em>':''}`;
-    usersList.appendChild(li);
-  });
+  if(usersList){
+    usersList.innerHTML = '';
+    state.users.forEach(u=>{
+      const li = document.createElement('li');
+      // Admins requested: list should show usernames only (no codenames)
+      li.innerHTML = `${u.username} ${u.isAdmin?'<em>admin</em>':''}`;
+      usersList.appendChild(li);
+    });
+  }
 
   // For admins: show pairs as codenames so names are not plainly visible, but patterns can be checked
   if(me.isAdmin){
