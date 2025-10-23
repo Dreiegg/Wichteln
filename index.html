@@ -40,6 +40,11 @@
 
       <div id="userArea">
         <h3>Deine Wunschliste</h3>
+        <form id="displayNameForm" class="small">
+          <label>Anzeige-Name (sichtbar für andere)<input id="displayNameInput" name="displayName" placeholder="Dein Name"></label>
+          <div class="row"><button type="submit">Name speichern</button></div>
+        </form>
+
         <form id="wishlistForm">
           <textarea id="wishlistInput" placeholder="Eine Wunschliste, ein Item pro Zeile"></textarea>
           <div class="row"><button type="submit">Speichern</button></div>
@@ -66,6 +71,28 @@
       </div>
 
       <div class="row"><button id="logoutBtn">Abmelden</button></div>
+    
+      <!-- Admin panel placed below all other content -->
+      <div id="adminArea" class="hidden">
+        <h3>Admin-Panel</h3>
+        <div class="row">
+          <button id="drawBtn">Draw (Wichtel verteilen)</button>
+          <button id="exportPairs">Exportiere Pairs (JSON)</button>
+          <button id="resetPairs">Pairs zurücksetzen</button>
+        </div>
+
+        <h4>Benutzerverwaltung</h4>
+        <div class="row">
+          <label>Benutzername löschen<input id="deleteUsernameInput" placeholder="Benutzername"></label>
+          <button id="deleteUserBtn">Löschen</button>
+        </div>
+
+        <h4>Alle Nutzer</h4>
+        <ul id="usersList"></ul>
+
+        <h4>Aktuelle (kodierte) Pairs</h4>
+        <pre id="pairsView">(keine)</pre>
+      </div>
     </section>
   </main>
 

@@ -75,6 +75,8 @@ const registerBox = document.getElementById('registerBox');
 const loginBox = document.getElementById('loginBox');
 const wishlistForm = document.getElementById('wishlistForm');
 const wishlistInput = document.getElementById('wishlistInput');
+const displayNameForm = document.getElementById('displayNameForm');
+const displayNameInput = document.getElementById('displayNameInput');
 const assignedInfo = document.getElementById('assignedInfo');
 const logoutBtn = document.getElementById('logoutBtn');
 const adminArea = document.getElementById('adminArea');
@@ -86,6 +88,8 @@ const resetPairs = document.getElementById('resetPairs');
 const isAdminCheckbox = document.getElementById('isAdminCheckbox');
 const adminKeyInput = document.getElementById('adminKeyInput');
 const adminKeyLabel = document.getElementById('adminKeyLabel');
+const deleteUsernameInput = document.getElementById('deleteUsernameInput');
+const deleteUserBtn = document.getElementById('deleteUserBtn');
 
 showRegister.addEventListener('click', ()=>{ registerBox.classList.remove('hidden'); loginBox.classList.add('hidden'); });
 showLogin.addEventListener('click', ()=>{ registerBox.classList.add('hidden'); loginBox.classList.remove('hidden'); });
@@ -141,6 +145,22 @@ wishlistForm.addEventListener('submit', async e=>{
   alert('Wunschliste gespeichert');
 });
 
+// change display name for current user
+if(displayNameForm){
+  displayNameForm.addEventListener('submit', async e=>{
+    e.preventDefault();
+    state = await loadSharedData();
+    const user = state.users.find(u=>u.id === session.userId);
+    if(!user) return alert('Nicht eingeloggt');
+    const newName = (displayNameInput.value || '').trim();
+    if(!newName) return alert('Name darf nicht leer sein');
+    user.displayName = newName;
+    await saveSharedData(state);
+    alert('Anzeige-Name gespeichert');
+    render();
+  });
+}
+
 drawBtn.addEventListener('click', async ()=>{
   state = await loadSharedData();
   if(state.users.length < 2){ alert('Mindestens 2 Nutzer nötig'); return; }
@@ -158,6 +178,35 @@ exportPairs.addEventListener('click', async ()=>{
 });
 
 resetPairs.addEventListener('click', async ()=>{ if(confirm('Pairs wirklich zurücksetzen?')){ state = await loadSharedData(); state.pairs = {}; await saveSharedData(state); render(); } });
+
+// Admin: delete user by username
+if(deleteUserBtn){
+  deleteUserBtn.addEventListener('click', async ()=>{
+    const username = (deleteUsernameInput.value || '').trim();
+    if(!username) return alert('Bitte Benutzernamen eingeben');
+    if(!confirm(`Benutzer "${username}" wirklich löschen? Diese Aktion ist permanent.`)) return;
+    state = await loadSharedData();
+    const me = state.users.find(u=>u.id === session.userId);
+    if(!me || !me.isAdmin) return alert('Nur Admins können Nutzer löschen');
+    const idx = state.users.findIndex(u=>u.username === username);
+    if(idx === -1) return alert('Benutzer nicht gefunden');
+    const removed = state.users.splice(idx,1)[0];
+    // remove any pairs referencing the removed user
+    const newPairs = {};
+    Object.keys(state.pairs || {}).forEach(g => {
+      const r = state.pairs[g];
+      if(g === removed.id) return; // removed giver
+      if(r === removed.id) return; // removed receiver
+      newPairs[g] = r;
+    });
+    state.pairs = newPairs;
+    // if removed user is current session, log them out
+    if(session.userId === removed.id) session.userId = null;
+    await saveSharedData(state);
+    alert('Benutzer gelöscht: ' + username);
+    render();
+  });
+}
 
 function downloadText(filename, text){
   const blob = new Blob([text], {type: 'application/json'});
