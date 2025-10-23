@@ -394,5 +394,6 @@ function render(){
 
 render();
 
-// Expose a helper for demo: auto-login first user if exists
-if(session.userId === null && state.users.length>0){ session.userId = state.users[0].id; render(); }
+// Demo helper removed: do not auto-login the first user anymore.
+// Users must sign in explicitly via the login form.
+// If you need a dev helper to auto-login, run a console snippet manually.
