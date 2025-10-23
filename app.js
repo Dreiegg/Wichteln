@@ -320,7 +320,24 @@ function codenameForId(id){
 }
 
 function render(){
-  state = loadData();
+  // Start from the local copy so UI is responsive, then try to sync with Firestore
+  const localState = loadData();
+  state = localState;
+
+  // If Firestore is enabled, fetch remote state and replace local if different
+  if(useFirestore){
+    loadSharedData().then(remote => {
+      try{
+        if(JSON.stringify(remote) !== JSON.stringify(localState)){
+          state = remote || {users: [], pairs: {}};
+          // update local cache
+          saveDataLocal(state);
+          // re-render once with the remote data
+          render();
+        }
+      }catch(e){ console.warn('render: sync compare failed', e); }
+    }).catch(e=>{ console.warn('render: loadSharedData failed', e); });
+  }
   // nav
   nav.innerHTML = '';
   const l = document.createElement('div');
