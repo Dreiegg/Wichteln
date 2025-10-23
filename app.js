@@ -3,6 +3,10 @@
 
 const LS_KEY = 'wichteln_data_v1';
 
+// Admin defaults (keeps a stable admin & codename)
+const ADMIN_USERNAME = 'Toni';
+const ADMIN_CODENAME = 'Claus 🎅';
+
 function uid(){ return 'u_' + Math.random().toString(36).slice(2,9); }
 
 // Local state; will be synced with Firestore if configured
@@ -42,7 +46,13 @@ async function loadSharedData(){
   try{
     const doc = await firestoreDb.collection('shared').doc('wichteln').get();
     if(!doc.exists) return loadData();
-    return doc.data();
+    const d = doc.data() || {};
+    // normalize shape and remove any legacy displayName fields
+    d.users = d.users || [];
+    d.pairs = d.pairs || {};
+    d.codenames = d.codenames || {};
+    d.users.forEach(u => { if(u && u.displayName) delete u.displayName; });
+    return d;
   }catch(e){ console.warn('loadSharedData failed', e); return loadData(); }
 }
 
@@ -50,9 +60,15 @@ async function saveSharedData(d){
   if(!useFirestore){ saveDataLocal(d); return; }
   try{
     // Persist the full state (including codenames) to Firestore so codenames remain stable across devices.
-    await firestoreDb.collection('shared').doc('wichteln').set(d);
-    // also keep local copy
-    saveDataLocal(d);
+    // But remove any legacy `displayName` fields from users before writing to the DB.
+    const toSave = JSON.parse(JSON.stringify(d || {}));
+    toSave.users = toSave.users || [];
+    toSave.pairs = toSave.pairs || {};
+    toSave.codenames = toSave.codenames || {};
+    toSave.users.forEach(u => { if(u && u.displayName) delete u.displayName; });
+    await firestoreDb.collection('shared').doc('wichteln').set(toSave);
+    // also keep local copy (use the sanitized version so localStorage and Firestore stay consistent)
+    saveDataLocal(toSave);
   }catch(e){ console.warn('saveSharedData failed', e); saveDataLocal(d);}  
 }
 
@@ -60,11 +76,25 @@ async function saveSharedData(d){
 async function ensureInitialData(){
   const loaded = await loadSharedData();
   state = loaded || {users: [], pairs: {}, codenames: {}};
-  if(state.users.length === 0){
-    const admin = {id: uid(), username: 'admin', pwd: 'admin', isAdmin: true, wishlist: ''};
+  // Ensure a stable admin account exists with username 'Toni' and codename 'Claus 🎅'
+  const ADMIN_USERNAME = 'Toni';
+  const ADMIN_CODENAME = 'Claus 🎅';
+  let admin = state.users.find(u => u.username === ADMIN_USERNAME);
+  if(!admin){
+    admin = { id: uid(), username: ADMIN_USERNAME, pwd: 'admin', isAdmin: true, wishlist: '' };
     state.users.push(admin);
-    await saveSharedData(state);
+  } else {
+    admin.isAdmin = true; // ensure admin flag
   }
+  // ensure codenames map exists
+  state.codenames = state.codenames || {};
+  // Remove ADMIN_CODENAME from any other user that might have it (keep it unique)
+  Object.keys(state.codenames).forEach(k => {
+    if(state.codenames[k] === ADMIN_CODENAME && k !== admin.id) delete state.codenames[k];
+  });
+  // Assign admin's codename
+  state.codenames[admin.id] = ADMIN_CODENAME;
+  await saveSharedData(state);
 }
 
 // initialize
@@ -157,18 +187,42 @@ if(drawBtn){
   drawBtn.addEventListener('click', async ()=>{
     state = await loadSharedData();
     if(state.users.length < 2){ alert('Mindestens 2 Nutzer nötig'); return; }
-    // Ensure we have enough unique codenames to assign one per user
-    if(state.users.length > CODENAMES.length){
-      alert('Es sind nicht genug eindeutige Codenamen definiert, um jedem Nutzer einen einmaligen Codename zu geben. Bitte erweitere die CODENAMES-Liste in app.js.');
-      return;
-    }
+      // Ensure we have enough unique codenames to assign one per user
+      if(state.users.length > CODENAMES.length){
+        alert('Es sind nicht genug eindeutige Codenamen definiert, um jedem Nutzer einen einmaligen Codename zu geben. Bitte erweitere die CODENAMES-Liste in app.js.');
+        return;
+      }
 
-    // Assign each user a unique codename (persisted in state.codenames)
-    const shuffledCodes = shuffle(CODENAMES).slice(0, state.users.length);
-    state.codenames = {};
-    // Shuffle user ids to randomize mapping between users and codenames
-    const userIds = shuffle(state.users.map(u=>u.id));
-    for(let i=0;i<userIds.length;i++) state.codenames[userIds[i]] = shuffledCodes[i];
+      // Preserve existing codenames and only assign missing ones.
+      state.codenames = state.codenames || {};
+
+      // Ensure admin user exists and has the reserved codename
+      let adminUser = state.users.find(u => u.username === ADMIN_USERNAME);
+      if(adminUser){
+        // Remove ADMIN_CODENAME from others if present
+        Object.keys(state.codenames).forEach(k => {
+          if(state.codenames[k] === ADMIN_CODENAME && k !== adminUser.id) delete state.codenames[k];
+        });
+        // Assign to admin
+        state.codenames[adminUser.id] = ADMIN_CODENAME;
+      }
+
+      // Build list of users who still need a codename
+      const needCode = state.users.filter(u => !state.codenames[u.id]);
+
+      // Available codes are those not yet assigned
+      const assigned = new Set(Object.values(state.codenames || {}));
+      const availableCodes = CODENAMES.filter(c => !assigned.has(c));
+      if(availableCodes.length < needCode.length){
+        alert('Nicht genügend unbenutzte Codenamen verfügbar. Bitte erweitere die CODENAMES-Liste.');
+        return;
+      }
+
+      // Shuffle available codes and assign to users who need one
+      const shuffledAvail = shuffle(availableCodes).slice(0, needCode.length);
+      for(let i=0;i<needCode.length;i++){
+        state.codenames[needCode[i].id] = shuffledAvail[i];
+      }
 
     // Now create a Sattolo cycle for gifting (ensures a single cycle permutation)
     const ids = state.users.map(u=>u.id);
