@@ -340,7 +340,12 @@ function render(){
   } else {
     welcome.textContent = `Willkommen, ${me.username} (${myCode})`;
   }
-  wishlistInput.value = me.wishlist || '';
+  // Avoid overwriting the textarea while the user is actively typing.
+  try{
+    if(document.activeElement !== wishlistInput){
+      wishlistInput.value = me.wishlist || '';
+    }
+  }catch(e){ wishlistInput.value = me.wishlist || ''; }
 
   // assigned: who you gift (receiver) and who gives you (giver)
   if(state.pairs){
