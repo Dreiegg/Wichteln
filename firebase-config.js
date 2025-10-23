@@ -16,5 +16,6 @@ window.firebaseConfig = {
 // ermöglicht es die sichere Erstellung von Admin-Accounts (clients müssen
 // das Secret zum Registrieren angeben). Beispiel:
 // window.organizerSecret = 'meingeheimespasswort123';
-
-window.organizerSecret = null;
+// IMPORTANT: This value is sensitive. Keep it local and do NOT commit it to a public
+// repository. Replace the value below with your own secret if you want to rotate it.
+window.organizerSecret = '7f2b9c4a8d6e1f3a9b0c2d4e5f6a7b8c';

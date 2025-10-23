@@ -112,7 +112,8 @@ registerForm.addEventListener('submit', async e=>{
   e.preventDefault();
   const f = new FormData(registerForm);
   const username = f.get('username').trim();
-  const displayName = f.get('displayName') || username;
+  // No separate display name: use username as displayName
+  const displayName = username;
   const password = f.get('password');
   const isAdmin = !!f.get('isAdmin');
   const adminKey = f.get('adminKey');
