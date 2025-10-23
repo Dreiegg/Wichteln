@@ -233,10 +233,28 @@ logoutBtn.addEventListener('click', ()=>{ session.userId = null; render(); });
 
 wishlistForm.addEventListener('submit', async e=>{
   e.preventDefault();
+  // Try to persist the wishlist. Prefer the shared (remote) state when possible,
+  // but fall back to the local cache if the remote state doesn't yet include this user
+  // (this can happen when local registration created a user that hasn't been pushed to the shared doc).
   state = await loadSharedData();
-  const user = state.users.find(u=>u.id === session.userId);
-  if(!user) return;
+  let user = state.users.find(u=>u.id === session.userId);
+  if(!user){
+    // remote didn't have the user yet — try local cache
+    const local = loadData();
+    const localUser = (local.users || []).find(u => u.id === session.userId);
+    if(localUser){
+      // merge the local user into the state we'll save
+      state.users = state.users || [];
+      // remove any existing entry with same id to avoid duplicates
+      state.users = state.users.filter(u => u.id !== localUser.id);
+      state.users.push(localUser);
+      user = localUser;
+    }
+  }
+  if(!user){ alert('Benutzer nicht gefunden — bitte melde dich erneut an.'); return; }
+
   user.wishlist = wishlistInput.value.trim();
+  // Persist; saveSharedData will fall back to localStorage if Firestore write fails
   await saveSharedData(state);
   // clear transient draft after successful save
   try{ delete wishlistDrafts[session.userId]; }catch(e){}
