@@ -75,12 +75,6 @@ const registerBox = document.getElementById('registerBox');
 const loginBox = document.getElementById('loginBox');
 const wishlistForm = document.getElementById('wishlistForm');
 const wishlistInput = document.getElementById('wishlistInput');
-const changeCredsBtn = document.getElementById('changeCredsBtn');
-const credsForm = document.getElementById('credsForm');
-const credsDisplayName = document.getElementById('credsDisplayName');
-const credsCurrentPwd = document.getElementById('credsCurrentPwd');
-const credsNewPwd = document.getElementById('credsNewPwd');
-const credsNewPwd2 = document.getElementById('credsNewPwd2');
 const assignedInfo = document.getElementById('assignedInfo');
 const logoutBtn = document.getElementById('logoutBtn');
 const adminArea = document.getElementById('adminArea');
@@ -92,11 +86,7 @@ const resetPairs = document.getElementById('resetPairs');
 const isAdminCheckbox = document.getElementById('isAdminCheckbox');
 const adminKeyInput = document.getElementById('adminKeyInput');
 const adminKeyLabel = document.getElementById('adminKeyLabel');
-const deleteUsernameInput = document.getElementById('deleteUsernameInput');
-const deleteUserBtn = document.getElementById('deleteUserBtn');
-const resetUsernameInput = document.getElementById('resetUsernameInput');
-const resetPwdInput = document.getElementById('resetPwdInput');
-const resetPwdBtn = document.getElementById('resetPwdBtn');
+// User management is handled in Firebase Console; remove client-side management UI elements.
 
 showRegister.addEventListener('click', ()=>{ registerBox.classList.remove('hidden'); loginBox.classList.add('hidden'); });
 showLogin.addEventListener('click', ()=>{ registerBox.classList.add('hidden'); loginBox.classList.remove('hidden'); });
@@ -152,55 +142,7 @@ wishlistForm.addEventListener('submit', async e=>{
   alert('Wunschliste gespeichert');
 });
 
-// toggle credentials form visibility
-if(changeCredsBtn && credsForm){
-  changeCredsBtn.addEventListener('click', ()=>{
-    credsForm.classList.toggle('hidden');
-    // prefill display name when showing
-    if(!credsForm.classList.contains('hidden')){
-      const s = loadData();
-      const me = s.users.find(u=>u.id === session.userId) || {};
-      credsDisplayName.value = me.displayName || me.username || '';
-      credsCurrentPwd.value = '';
-      credsNewPwd.value = '';
-      credsNewPwd2.value = '';
-    }
-  });
-}
-
-// handle credentials form submit: change display name and/or password (requires current password when changing pwd)
-if(credsForm){
-  credsForm.addEventListener('submit', async e=>{
-    e.preventDefault();
-    state = await loadSharedData();
-    const user = state.users.find(u=>u.id === session.userId);
-    if(!user) return alert('Nicht eingeloggt');
-
-    const newName = (credsDisplayName.value || '').trim();
-    const currentPwd = credsCurrentPwd.value || '';
-    const newPwd = credsNewPwd.value || '';
-    const newPwd2 = credsNewPwd2.value || '';
-
-    // change display name if provided
-    if(newName && newName !== user.displayName){
-      user.displayName = newName;
-    }
-
-    // if password fields filled, require current password and match
-    if(newPwd || newPwd2){
-      if(!currentPwd) return alert('Bitte aktuelles Passwort eingeben, um das Passwort zu ändern');
-      if(currentPwd !== user.pwd) return alert('Aktuelles Passwort falsch');
-      if(newPwd.length < 4) return alert('Neues Passwort zu kurz (min. 4 Zeichen)');
-      if(newPwd !== newPwd2) return alert('Neue Passwörter stimmen nicht überein');
-      user.pwd = newPwd;
-    }
-
-    await saveSharedData(state);
-    alert('Änderungen gespeichert');
-    credsForm.classList.add('hidden');
-    render();
-  });
-}
+// Credential-change UI removed; user management is done through Firebase Console.
 
 if(drawBtn){
   drawBtn.addEventListener('click', async ()=>{
@@ -226,70 +168,7 @@ if(resetPairs){
   resetPairs.addEventListener('click', async ()=>{ if(confirm('Pairs wirklich zurücksetzen?')){ state = await loadSharedData(); state.pairs = {}; await saveSharedData(state); render(); } });
 }
 
-// Admin: delete user by username
-if(deleteUserBtn){
-  deleteUserBtn.addEventListener('click', async ()=>{
-    const username = (deleteUsernameInput.value || '').trim();
-    if(!username) return alert('Bitte Benutzernamen eingeben');
-    if(!confirm(`Benutzer "${username}" wirklich löschen? Diese Aktion ist permanent.`)) return;
-    state = await loadSharedData();
-    const me = state.users.find(u=>u.id === session.userId);
-    if(!me || !me.isAdmin) return alert('Nur Admins können Nutzer löschen');
-    const idx = state.users.findIndex(u=>u.username === username);
-    if(idx === -1) return alert('Benutzer nicht gefunden');
-    const removed = state.users[idx];
-    // prevent deleting the last admin
-    if(removed.isAdmin){
-      const adminCount = state.users.filter(u=>u.isAdmin).length;
-      if(adminCount <= 1) return alert('Kann den letzten Admin nicht löschen. Lege zuerst einen weiteren Admin an.');
-    }
-    // perform removal
-    state.users.splice(idx,1);
-    // remove any pairs referencing the removed user
-    const newPairs = {};
-    Object.keys(state.pairs || {}).forEach(g => {
-      const r = state.pairs[g];
-      if(g === removed.id) return; // removed giver
-      if(r === removed.id) return; // removed receiver
-      newPairs[g] = r;
-    });
-    state.pairs = newPairs;
-    // if removed user is current session, log them out
-    if(session.userId === removed.id) session.userId = null;
-    await saveSharedData(state);
-    alert('Benutzer gelöscht: ' + username);
-    render();
-  });
-}
-
-// Admin: reset a user's password by username
-if(resetPwdBtn){
-  resetPwdBtn.addEventListener('click', async ()=>{
-    const username = (resetUsernameInput.value || '').trim();
-    const newPwdRaw = (resetPwdInput.value || '').trim();
-    if(!username) return alert('Bitte Benutzernamen eingeben');
-    state = await loadSharedData();
-    const me = state.users.find(u=>u.id === session.userId);
-    if(!me || !me.isAdmin) return alert('Nur Admins können Passwörter zurücksetzen');
-    const user = state.users.find(u=>u.username === username);
-    if(!user) return alert('Benutzer nicht gefunden');
-
-    // generate a random password if none provided
-    let newPwd = newPwdRaw;
-    if(!newPwd){
-      newPwd = Math.random().toString(36).slice(2,10) + Math.random().toString(36).slice(2,6);
-    }
-
-    user.pwd = newPwd;
-    await saveSharedData(state);
-
-    // If the reset target is the current session, keep them logged in (their session id stays valid)
-    alert(`Passwort für ${username} wurde zurückgesetzt. Neues Passwort: ${newPwd}\nBitte dem Nutzer mitteilen, dass er das Passwort ändern sollte.`);
-    // clear input for safety
-    resetPwdInput.value = '';
-    render();
-  });
-}
+// User management (delete/reset) removed — manage users via Firebase Console directly.
 
 function downloadText(filename, text){
   const blob = new Blob([text], {type: 'application/json'});
