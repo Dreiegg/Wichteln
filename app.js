@@ -12,6 +12,8 @@ function uid(){ return 'u_' + Math.random().toString(36).slice(2,9); }
 // Local state; will be synced with Firestore if configured
 let state = {users: [], pairs: {}, codenames: {}};
 let session = {userId: null};
+// transient in-memory drafts per user to avoid clobbering in-progress edits
+const wishlistDrafts = {};
 
 // Firestore setup (optional)
 let useFirestore = false;
@@ -54,6 +56,47 @@ async function loadSharedData(){
     d.users.forEach(u => { if(u && u.displayName) delete u.displayName; });
     return d;
   }catch(e){ console.warn('loadSharedData failed', e); return loadData(); }
+}
+
+// Merge remote shared state into a local state snapshot while preserving
+// ephemeral local drafts (wishlistDrafts) and the current session where possible.
+function mergeSharedState(localState, remote, opts){
+  if(!remote) return localState;
+  opts = opts || {};
+  const merged = { users: [], pairs: {}, codenames: {} };
+  // By default accept remote pairs/codenames, but allow preserving local pairs when the
+  // current user has unsaved edits to avoid distracting jumps while they type.
+  const preservePairsIfEditing = !!opts.preservePairsIfEditing;
+  const currentUserId = opts.currentUserId;
+  if(preservePairsIfEditing && currentUserId && wishlistDrafts[currentUserId]){
+    merged.pairs = (localState && localState.pairs) ? localState.pairs : (remote.pairs || {});
+  } else {
+    merged.pairs = remote.pairs || {};
+  }
+  merged.codenames = remote.codenames || {};
+
+  // Build user maps by id for local and remote
+  const localById = {};
+  (localState.users || []).forEach(u => { if(u && u.id) localById[u.id] = u; });
+  const remoteById = {};
+  (remote.users || []).forEach(u => { if(u && u.id) remoteById[u.id] = u; });
+
+  // Start from remote users (authoritative list), but preserve local wishlist drafts
+  (remote.users || []).forEach(u => {
+    const copy = Object.assign({}, u);
+    // If we have a transient draft for this user, keep it out of the persisted wishlist
+    if(localById[u.id] && wishlistDrafts[u.id]){
+      // keep copy.wishlist as remote.wishlist (persisted), drafts are kept separately
+    }
+    merged.users.push(copy);
+  });
+
+  // If there are local-only users not present in remote (rare), append them
+  (localState.users || []).forEach(u => {
+    if(!remoteById[u.id]) merged.users.push(Object.assign({}, u));
+  });
+
+  return merged;
 }
 
 async function saveSharedData(d){
@@ -178,8 +221,17 @@ wishlistForm.addEventListener('submit', async e=>{
   if(!user) return;
   user.wishlist = wishlistInput.value.trim();
   await saveSharedData(state);
+  // clear transient draft after successful save
+  try{ delete wishlistDrafts[session.userId]; }catch(e){}
   alert('Wunschliste gespeichert');
 });
+
+// keep a transient draft of the wishlist while the user types so re-renders don't erase it
+if(wishlistInput){
+  wishlistInput.addEventListener('input', ()=>{
+    if(session.userId) wishlistDrafts[session.userId] = wishlistInput.value;
+  });
+}
 
 // Credential-change UI removed; user management is done through Firebase Console.
 
@@ -308,16 +360,16 @@ function render(){
   if(useFirestore){
     loadSharedData().then(remote => {
       try{
-            if(JSON.stringify(remote) !== JSON.stringify(localState)){
-              // accept remote state (including codenames) so mappings stay consistent across devices
-              const r = remote || {users: [], pairs: {}, codenames: {}};
-              r.users = r.users || [];
-              r.pairs = r.pairs || {};
-              r.codenames = r.codenames || {};
-              state = r;
-              // update local cache
+            // Determine whether to preserve local pairs while the current user is editing
+            const preservePairs = (session && session.userId && wishlistDrafts[session.userId] &&
+              wishlistDrafts[session.userId] !== (localState.users.find(u=>u.id===session.userId)||{}).wishlist);
+            // Merge remote into local, preserving any in-progress local drafts and optionally pairs.
+            const merged = mergeSharedState(localState, remote || {users:[], pairs:{}, codenames:{}}, { preservePairsIfEditing: preservePairs, currentUserId: session.userId });
+            if(JSON.stringify(merged) !== JSON.stringify(localState)){
+              state = merged;
+              // update local cache with merged authoritative data
               saveDataLocal(state);
-              // re-render once with the remote data
+              // re-render once with the merged data
               render();
             }
       }catch(e){ console.warn('render: sync compare failed', e); }
@@ -334,16 +386,18 @@ function render(){
   auth.classList.add('hidden'); dashboard.classList.remove('hidden');
   const me = state.users.find(u=>u.id === session.userId);
   const myCode = codenameForId(me.id);
-  // Show username with codename only in the welcome line for non-admins (privacy elsewhere preserved)
-  if(me.isAdmin){
-    welcome.textContent = `Willkommen, ${me.username}`;
-  } else {
-    welcome.textContent = `Willkommen, ${me.username} (${myCode})`;
-  }
+  // Show username with codename in the welcome line (admins should also see their codename)
+  welcome.textContent = `Willkommen, ${me.username} (${myCode})`;
   // Avoid overwriting the textarea while the user is actively typing.
   try{
     if(document.activeElement !== wishlistInput){
-      wishlistInput.value = me.wishlist || '';
+      // prefer an in-progress draft if present; fall back to saved wishlist
+      const draft = wishlistDrafts[me.id];
+      if(typeof draft !== 'undefined' && draft !== null){
+        wishlistInput.value = draft;
+      } else {
+        wishlistInput.value = me.wishlist || '';
+      }
     }
   }catch(e){ wishlistInput.value = me.wishlist || ''; }
 
