@@ -401,6 +401,24 @@ function codenameForId(id){
   return CODENAMES[idx];
 }
 
+// Robust renderer helper: always return a printable codename for an id.
+// Prefer persisted mapping, then deterministic fallback, then ADMIN_CODENAME for admin id.
+function displayCodename(id){
+  try{
+    if(state && state.codenames && state.codenames[id]) return state.codenames[id];
+  }catch(e){}
+  // if id belongs to an admin user, prefer ADMIN_CODENAME
+  try{
+    const u = (state && state.users) ? state.users.find(x => x.id === id) : null;
+    if(u && u.username === ADMIN_USERNAME) return ADMIN_CODENAME;
+  }catch(e){}
+  // fallback to deterministic mapping
+  const c = codenameForId(id);
+  if(c) return c;
+  // last resort: render a short placeholder (avoid showing raw id)
+  return 'Unbekannt';
+}
+
 function render(){
   // Start from the local copy so UI is responsive, then try to sync with Firestore
   const localState = loadData();
@@ -435,9 +453,8 @@ function render(){
 
   auth.classList.add('hidden'); dashboard.classList.remove('hidden');
   const me = state.users.find(u=>u.id === session.userId);
-  // Prefer persisted codename, but fall back to a deterministic mapping.
-  // Ensure the admin username always shows the reserved codename even if mapping is missing.
-  const myCode = (state && state.codenames && state.codenames[me.id]) || (me.username === ADMIN_USERNAME ? ADMIN_CODENAME : codenameForId(me.id));
+  // Use robust display helper so admin always sees their reserved codename and we avoid raw ids.
+  const myCode = displayCodename(me.id);
   // Show username with codename in the welcome line (admins should also see their codename)
   welcome.textContent = `Willkommen, ${me.username} (${myCode})`;
   // Avoid overwriting the textarea while the user is actively typing.
@@ -472,8 +489,8 @@ function render(){
     // giver: who gives me a present
     const giverId = Object.keys(state.pairs || {}).find(g => state.pairs[g] === me.id);
     if(giverId){
-      const giverUser = state.users.find(u=>u.id === giverId);
-      const giverCode = codenameForId(giverUser.id);
+  const giverUser = state.users.find(u=>u.id === giverId);
+  const giverCode = displayCodename(giverUser.id);
       assignedInfo.innerHTML += `<div class="giver" style="margin-top:8px"><strong>Du bekommst dein Geschenk von:</strong> ${giverCode}</div>`;
     } else {
       assignedInfo.innerHTML += `<div style="margin-top:8px"><em>Wer dir schenkt ist noch nicht gezogen.</em></div>`;
@@ -502,14 +519,14 @@ function render(){
     // Build the text for the pairs view (codename mapping)
     const lines = [];
     const codeMap = {};
-    state.users.forEach(u => codeMap[u.id] = codenameForId(u.id));
+    state.users.forEach(u => codeMap[u.id] = displayCodename(u.id));
     for(const giverId of Object.keys(pairs)){
       const recvId = pairs[giverId];
       lines.push(`${codeMap[giverId]} -> ${codeMap[recvId]}`);
     }
     // also show counts to detect duplicates
     const counts = {};
-    Object.values(pairs).forEach(id => { const c = codeMap[id]||id; counts[c] = (counts[c]||0)+1; });
+    Object.values(pairs).forEach(id => { const c = codeMap[id] || displayCodename(id); counts[c] = (counts[c]||0)+1; });
     lines.push('\nAnzahl:');
     Object.keys(counts).forEach(k => lines.push(`${k}: ${counts[k]}`));
     const newText = lines.join('\n');
