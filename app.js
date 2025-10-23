@@ -520,15 +520,19 @@ function render(){
     const lines = [];
     const codeMap = {};
     state.users.forEach(u => codeMap[u.id] = displayCodename(u.id));
-    for(const giverId of Object.keys(pairs)){
+    // Iterate giver ids in a stable, sorted order to avoid view jitter caused by
+    // non-deterministic object key ordering between syncs.
+    const giverIds = Object.keys(pairs || {}).slice().sort();
+    for(const giverId of giverIds){
       const recvId = pairs[giverId];
       lines.push(`${codeMap[giverId]} -> ${codeMap[recvId]}`);
     }
     // also show counts to detect duplicates
     const counts = {};
-    Object.values(pairs).forEach(id => { const c = codeMap[id] || displayCodename(id); counts[c] = (counts[c]||0)+1; });
-    lines.push('\nAnzahl:');
-    Object.keys(counts).forEach(k => lines.push(`${k}: ${counts[k]}`));
+  Object.values(pairs).forEach(id => { const c = codeMap[id] || displayCodename(id); counts[c] = (counts[c]||0)+1; });
+  lines.push('\nAnzahl:');
+  // Output counts in a stable, alphabetical order to avoid reordering between renders
+  Object.keys(counts).slice().sort().forEach(k => lines.push(`${k}: ${counts[k]}`));
     const newText = lines.join('\n');
     // Update the admin pairs view when either the authoritative pairs timestamp changed
     // or the rendered text would be different (e.g. codenames updated).
