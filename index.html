@@ -24,59 +24,50 @@
       </div>
 
       <div id="registerBox" class="hidden">
-        <!-- Reihenfolge: Intro (Willkommen), die dir zugeordnete Person + deren Wunschliste, dann deine Wunschliste,
-             danach eine auf Anfrage sichtbare Namens-/Passwort-Änderung und zuletzt das Admin-Panel -->
-
-        <div id="assignedArea">
-          <h3>Person, die du beschenkst</h3>
-          <div id="assignedInfo">Noch keine Zuordnung vorhanden.</div>
-        </div>
-
-        <div id="userArea">
-          <h3>Deine Wunschliste</h3>
-          <form id="wishlistForm">
-            <textarea id="wishlistInput" placeholder="Eine Wunschliste, ein Item pro Zeile"></textarea>
-            <div class="row"><button type="submit">Speichern</button></div>
-          </form>
-        </div>
-
-        <!-- Button to reveal name/password change form on request -->
-        <div class="row">
-          <button id="changeCredsBtn" type="button">Name / Passwort ändern</button>
-        </div>
-
-        <form id="credsForm" class="hidden small">
-          <h4>Name / Passwort ändern</h4>
-          <label>Anzeige-Name<input id="credsDisplayName" name="displayName" placeholder="Neuer Name"></label>
-          <label>Aktuelles Passwort<input id="credsCurrentPwd" type="password" name="currentPwd" placeholder="Aktuelles Passwort"></label>
-          <label>Neues Passwort<input id="credsNewPwd" type="password" name="newPwd" placeholder="Neues Passwort"></label>
-          <label>Neues Passwort (wieder)<input id="credsNewPwd2" type="password" name="newPwd2" placeholder="Passwort wiederholen"></label>
-          <div class="row"><button id="credsSaveBtn" type="submit">Speichern</button></div>
+        <h2>Registrieren</h2>
+        <form id="registerForm">
+          <label>Benutzername<input name="username" required></label>
+          <label>Passwort<input type="password" name="password" required></label>
+          <label><input type="checkbox" name="isAdmin" id="isAdminCheckbox"> Als Admin registrieren (nur für Organisator)</label>
+          <label id="adminKeyLabel" class="hidden">Organisator-Passwort<input type="password" name="adminKey" id="adminKeyInput"></label>
+          <div class="row"><button type="submit">Registrieren</button> <button type="button" id="showLogin">Zurück</button></div>
         </form>
+      </div>
 
-        <div class="row"><button id="logoutBtn">Abmelden</button></div>
+    </section>
 
-        <!-- Admin panel placed below all other content -->
-        <div id="adminArea" class="hidden">
-          <h3>Admin-Panel</h3>
-          <div class="row">
-            <button id="drawBtn">Draw (Wichtel verteilen)</button>
-            <button id="exportPairs">Exportiere Pairs (JSON)</button>
-            <button id="resetPairs">Pairs zurücksetzen</button>
-          </div>
+    <section id="dashboard" class="hidden">
+      <h2 id="welcome"></h2>
 
-          <h4>Benutzerverwaltung</h4>
-          <div class="row">
-            <label>Benutzername löschen<input id="deleteUsernameInput" placeholder="Benutzername"></label>
-            <button id="deleteUserBtn">Löschen</button>
-          </div>
+      <div id="assignedArea">
+        <h3>Person, die du beschenkst</h3>
+        <div id="assignedInfo">Noch keine Zuordnung vorhanden.</div>
+      </div>
 
-          <h4>Alle Nutzer</h4>
-          <ul id="usersList"></ul>
+      <div id="userArea">
+        <h3>Deine Wunschliste</h3>
+        <form id="wishlistForm">
+          <textarea id="wishlistInput" placeholder="Eine Wunschliste, ein Item pro Zeile"></textarea>
+          <div class="row"><button type="submit">Speichern</button></div>
+        </form>
+      </div>
 
-          <h4>Aktuelle (kodierte) Pairs</h4>
-          <pre id="pairsView">(keine)</pre>
-        </div>
+      <div class="row">
+        <button id="changeCredsBtn" type="button">Name / Passwort ändern</button>
+      </div>
+
+      <form id="credsForm" class="hidden small">
+        <h4>Name / Passwort ändern</h4>
+        <label>Anzeige-Name<input id="credsDisplayName" name="displayName" placeholder="Neuer Name"></label>
+        <label>Aktuelles Passwort<input id="credsCurrentPwd" type="password" name="currentPwd" placeholder="Aktuelles Passwort"></label>
+        <label>Neues Passwort<input id="credsNewPwd" type="password" name="newPwd" placeholder="Neues Passwort"></label>
+        <label>Neues Passwort (wieder)<input id="credsNewPwd2" type="password" name="newPwd2" placeholder="Passwort wiederholen"></label>
+        <div class="row"><button id="credsSaveBtn" type="submit">Speichern</button></div>
+      </form>
+
+      <div class="row"><button id="logoutBtn">Abmelden</button></div>
+
+      <div id="adminArea" class="hidden">
         <h3>Admin-Panel</h3>
         <div class="row">
           <button id="drawBtn">Draw (Wichtel verteilen)</button>
