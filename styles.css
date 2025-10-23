@@ -10,5 +10,10 @@ button{background:var(--accent);color:#fff;border:none;padding:8px 12px;border-r
 .row{display:flex;gap:8px;margin-top:8px}
 .hidden{display:none}
 pre{background:#f7f7f7;padding:8px;border-radius:6px}
+/* Tighter grouping for the assigned person's wishlist and the user's wishlist */
+#assignedArea{margin-bottom:6px}
+#assignedArea h3{margin-bottom:6px}
+.assigned-wishlist pre{background:#f7f7f7;padding:8px;border-radius:6px;margin:0 0 8px 0;white-space:pre-wrap}
+#userArea{margin-top:6px}
 footer{margin-top:12px;color:var(--muted);font-size:12px}
 ul{padding-left:16px}

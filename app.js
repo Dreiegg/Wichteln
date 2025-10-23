@@ -6,7 +6,7 @@ const LS_KEY = 'wichteln_data_v1';
 function uid(){ return 'u_' + Math.random().toString(36).slice(2,9); }
 
 // Local state; will be synced with Firestore if configured
-let state = {users: [], pairs: {}};
+let state = {users: [], pairs: {}, codenames: {}};
 let session = {userId: null};
 
 // Firestore setup (optional)
@@ -51,7 +51,7 @@ async function saveSharedData(d){
 // init demo admin if no users
 async function ensureInitialData(){
   const loaded = await loadSharedData();
-  state = loaded || {users: [], pairs: {}};
+  state = loaded || {users: [], pairs: {}, codenames: {}};
   if(state.users.length === 0){
     const admin = {id: uid(), username: 'admin', displayName: 'Admin', pwd: 'admin', isAdmin: true, wishlist: ''};
     state.users.push(admin);
@@ -76,6 +76,7 @@ const loginBox = document.getElementById('loginBox');
 const wishlistForm = document.getElementById('wishlistForm');
 const wishlistInput = document.getElementById('wishlistInput');
 const assignedInfo = document.getElementById('assignedInfo');
+const assignedHeader = document.getElementById('assignedHeader');
 const logoutBtn = document.getElementById('logoutBtn');
 const adminArea = document.getElementById('adminArea');
 const usersList = document.getElementById('usersList');
@@ -126,8 +127,10 @@ registerForm.addEventListener('submit', async e=>{
   }
   const user = {id: uid(), username, displayName, pwd: password, isAdmin, wishlist: ''};
   state.users.push(user); await saveSharedData(state);
-  alert('Registrierung erfolgreich — bitte anmelden');
-  registerBox.classList.add('hidden'); loginBox.classList.remove('hidden');
+  // Auto-login the newly registered user so they can immediately edit their wishlist
+  session.userId = user.id;
+  // ensure UI updates to the dashboard
+  render();
 });
 
 logoutBtn.addEventListener('click', ()=>{ session.userId = null; render(); });
@@ -148,11 +151,27 @@ if(drawBtn){
   drawBtn.addEventListener('click', async ()=>{
     state = await loadSharedData();
     if(state.users.length < 2){ alert('Mindestens 2 Nutzer nötig'); return; }
+    // Ensure we have enough unique codenames to assign one per user
+    if(state.users.length > CODENAMES.length){
+      alert('Es sind nicht genug eindeutige Codenamen definiert, um jedem Nutzer einen einmaligen Codename zu geben. Bitte erweitere die CODENAMES-Liste in app.js.');
+      return;
+    }
+
+    // Assign each user a unique codename (persisted in state.codenames)
+    const shuffledCodes = shuffle(CODENAMES).slice(0, state.users.length);
+    state.codenames = {};
+    // Shuffle user ids to randomize mapping between users and codenames
+    const userIds = shuffle(state.users.map(u=>u.id));
+    for(let i=0;i<userIds.length;i++) state.codenames[userIds[i]] = shuffledCodes[i];
+
+    // Now create a Sattolo cycle for gifting (ensures a single cycle permutation)
     const ids = state.users.map(u=>u.id);
     const cycle = sattolo(ids.slice());
     const pairs = {};
     for(let i=0;i<cycle.length;i++) pairs[cycle[i]] = cycle[(i+1)%cycle.length];
-    state.pairs = pairs; await saveSharedData(state); render();
+    state.pairs = pairs;
+    await saveSharedData(state);
+    render();
   });
 }
 
@@ -187,14 +206,30 @@ function sattolo(array){
   return array;
 }
 
+function shuffle(array){
+  // returns a new shuffled copy (Fisher-Yates)
+  const a = array.slice();
+  for(let i = a.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = a[i]; a[i] = a[j]; a[j] = tmp;
+  }
+  return a;
+}
+
 // Simple deterministic obfuscation for ids using a salted djb2 hash -> base36
 // List of christmassy codenames (at least 10)
 const CODENAMES = [
-  'Claus', 'Rudolph', 'MrsSanta', 'Mistletoe', 'Krampus', 'Frosty', 'Holly', 'Jingle', 'Tinsel', 'Sleigh', 'Donner', 'Blitzen'
+  'Claus 🎅', 'Rudolph 🦌', 'MrsSanta 🎀', 'Mistletoe 🌿', 'Krampus 👹', 'Frosty ⛄', 'Holly 🌿', 'Jingle 🔔', 'Tinsel 🎗️', 'Sleigh 🛷', 'Donner ⚡', 'Blitzen ✨',
+  'CandyCane 🍭', 'Eggnog 🥛', 'YuleBeary 🐻', 'SparkleElf ✨', 'GingerSnap 🍪', 'SleighCat 🐱', 'Snowflake ❄️', 'MerryMittens 🧤', 'Pudding 🍮', 'TwinkleToes ⭐️'
 ];
 
 // Deterministic codename mapping using salted djb2 -> index into CODENAMES
 function codenameForId(id){
+  // Prefer an explicitly assigned codename persisted in state.codenames
+  try{
+    if(state && state.codenames && state.codenames[id]) return state.codenames[id];
+  }catch(e){ /* ignore; fall back to deterministic mapping */ }
+  // Fallback deterministic obfuscation using salted djb2 -> index into CODENAMES
   const salt = (window.organizerSecret || '');
   const s = id + '::' + salt;
   let h = 5381;
@@ -250,8 +285,11 @@ function render(){
       const assignedUser = state.users.find(u=>u.id === assignedId);
       // Show only the username (no codename) when displaying who you gift
       const displayName = assignedUser.username;
-      assignedInfo.innerHTML = `<strong>Du beschenkst:</strong> ${displayName}<br><h4>Wunschliste von ${displayName}</h4><pre>${(assignedUser.wishlist||'(keine)')}</pre>`;
+      if(assignedHeader) assignedHeader.textContent = `Person, die du beschenkst: ${displayName}`;
+      // render only the wishlist here (we moved the label into the header to avoid duplication)
+      assignedInfo.innerHTML = `<div class="assigned-wishlist"><pre>${(assignedUser.wishlist||'(keine)')}</pre></div>`;
     } else {
+      if(assignedHeader) assignedHeader.textContent = 'Person, die du beschenkst';
       assignedInfo.innerHTML = 'Du beschenkst im Moment niemanden.';
     }
 
@@ -260,7 +298,7 @@ function render(){
     if(giverId){
       const giverUser = state.users.find(u=>u.id === giverId);
       const giverCode = codenameForId(giverUser.id);
-      assignedInfo.innerHTML += `<div style="margin-top:8px"><strong>Du bekommst dein Geschenk von:</strong> ${giverCode}</div>`;
+      assignedInfo.innerHTML += `<div class="giver" style="margin-top:8px"><strong>Du bekommst dein Geschenk von:</strong> ${giverCode}</div>`;
     } else {
       assignedInfo.innerHTML += `<div style="margin-top:8px"><em>Wer dir schenkt ist noch nicht gezogen.</em></div>`;
     }
