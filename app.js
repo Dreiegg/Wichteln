@@ -499,21 +499,24 @@ function render(){
     const pairs = state.pairs || {};
     const pairsTs = (state.meta && state.meta.pairsUpdatedAt) ? state.meta.pairsUpdatedAt : 0;
     // Only update the pairs view when the authoritative pairs timestamp changed.
-    if(pairsTs !== lastPairsRenderedAt){
-      const lines = [];
-      // mapping id -> codename
-      const codeMap = {};
-      state.users.forEach(u => codeMap[u.id] = codenameForId(u.id));
-      for(const giverId of Object.keys(pairs)){
-        const recvId = pairs[giverId];
-        lines.push(`${codeMap[giverId]} -> ${codeMap[recvId]}`);
-      }
-      // also show counts to detect duplicates
-      const counts = {};
-      Object.values(pairs).forEach(id => { const c = codeMap[id]||id; counts[c] = (counts[c]||0)+1; });
-      lines.push('\nAnzahl:');
-      Object.keys(counts).forEach(k => lines.push(`${k}: ${counts[k]}`));
-      pairsView.textContent = lines.join('\n');
+    // Build the text for the pairs view (codename mapping)
+    const lines = [];
+    const codeMap = {};
+    state.users.forEach(u => codeMap[u.id] = codenameForId(u.id));
+    for(const giverId of Object.keys(pairs)){
+      const recvId = pairs[giverId];
+      lines.push(`${codeMap[giverId]} -> ${codeMap[recvId]}`);
+    }
+    // also show counts to detect duplicates
+    const counts = {};
+    Object.values(pairs).forEach(id => { const c = codeMap[id]||id; counts[c] = (counts[c]||0)+1; });
+    lines.push('\nAnzahl:');
+    Object.keys(counts).forEach(k => lines.push(`${k}: ${counts[k]}`));
+    const newText = lines.join('\n');
+    // Update the admin pairs view when either the authoritative pairs timestamp changed
+    // or the rendered text would be different (e.g. codenames updated).
+    if(pairsTs !== lastPairsRenderedAt || pairsView.textContent !== newText){
+      pairsView.textContent = newText;
       lastPairsRenderedAt = pairsTs;
     }
   } else {
