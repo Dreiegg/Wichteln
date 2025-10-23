@@ -14,6 +14,8 @@ let state = {users: [], pairs: {}, codenames: {}};
 let session = {userId: null};
 // transient in-memory drafts per user to avoid clobbering in-progress edits
 const wishlistDrafts = {};
+// remember last pairs timestamp we rendered to avoid UI jumps when remote syncs repeatedly
+let lastPairsRenderedAt = 0;
 
 // Firestore setup (optional)
 let useFirestore = false;
@@ -433,7 +435,9 @@ function render(){
 
   auth.classList.add('hidden'); dashboard.classList.remove('hidden');
   const me = state.users.find(u=>u.id === session.userId);
-  const myCode = codenameForId(me.id);
+  // Prefer persisted codename, but fall back to a deterministic mapping.
+  // Ensure the admin username always shows the reserved codename even if mapping is missing.
+  const myCode = (state && state.codenames && state.codenames[me.id]) || (me.username === ADMIN_USERNAME ? ADMIN_CODENAME : codenameForId(me.id));
   // Show username with codename in the welcome line (admins should also see their codename)
   welcome.textContent = `Willkommen, ${me.username} (${myCode})`;
   // Avoid overwriting the textarea while the user is actively typing.
@@ -493,20 +497,25 @@ function render(){
   // For admins: show pairs as codenames so names are not plainly visible, but patterns can be checked
   if(me.isAdmin){
     const pairs = state.pairs || {};
-    const lines = [];
-    // mapping id -> codename
-    const codeMap = {};
-    state.users.forEach(u => codeMap[u.id] = codenameForId(u.id));
-    for(const giverId of Object.keys(pairs)){
-      const recvId = pairs[giverId];
-      lines.push(`${codeMap[giverId]} -> ${codeMap[recvId]}`);
+    const pairsTs = (state.meta && state.meta.pairsUpdatedAt) ? state.meta.pairsUpdatedAt : 0;
+    // Only update the pairs view when the authoritative pairs timestamp changed.
+    if(pairsTs !== lastPairsRenderedAt){
+      const lines = [];
+      // mapping id -> codename
+      const codeMap = {};
+      state.users.forEach(u => codeMap[u.id] = codenameForId(u.id));
+      for(const giverId of Object.keys(pairs)){
+        const recvId = pairs[giverId];
+        lines.push(`${codeMap[giverId]} -> ${codeMap[recvId]}`);
+      }
+      // also show counts to detect duplicates
+      const counts = {};
+      Object.values(pairs).forEach(id => { const c = codeMap[id]||id; counts[c] = (counts[c]||0)+1; });
+      lines.push('\nAnzahl:');
+      Object.keys(counts).forEach(k => lines.push(`${k}: ${counts[k]}`));
+      pairsView.textContent = lines.join('\n');
+      lastPairsRenderedAt = pairsTs;
     }
-    // also show counts to detect duplicates
-    const counts = {};
-    Object.values(pairs).forEach(id => { const c = codeMap[id]||id; counts[c] = (counts[c]||0)+1; });
-    lines.push('\nAnzahl:');
-    Object.keys(counts).forEach(k => lines.push(`${k}: ${counts[k]}`));
-    pairsView.textContent = lines.join('\n');
   } else {
     pairsView.textContent = Object.keys(state.pairs || {}).length ? JSON.stringify(state.pairs, null, 2) : '(keine)';
   }
