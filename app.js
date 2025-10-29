@@ -640,11 +640,24 @@ function render(){
 
   // populate exclusions UI for admins
   if(me.isAdmin && exclusionGiver){
-    populateExclusionGiverSelect();
-    // pick previously selected giver if it exists in the select, otherwise choose first
-    const cur = exclusionGiver.value || (exclusionGiver.options.length? exclusionGiver.options[0].value : null);
-    if(cur) exclusionGiver.value = cur;
-    populateExclusionListFor(cur);
+    // Avoid overwriting the admin controls while the admin is actively interacting with them
+    // (e.g. changing the select or checking boxes). If the activeElement is inside the
+    // exclusions UI, skip repopulation so user interactions don't get immediately reset
+    // by background syncs / re-renders.
+    let activeInsideExclusions = false;
+    try{
+      activeInsideExclusions = (document.activeElement === exclusionGiver) || (exclusionList && exclusionList.contains && exclusionList.contains(document.activeElement));
+    }catch(e){ activeInsideExclusions = false; }
+
+    if(!activeInsideExclusions){
+      // Only repopulate the select when the number of options doesn't match users (cheap change-detection)
+      const needRepop = exclusionGiver.options.length !== (state.users || []).length;
+      if(needRepop) populateExclusionGiverSelect();
+      // pick previously selected giver if it exists in the select, otherwise choose first
+      const cur = exclusionGiver.value || (exclusionGiver.options.length? exclusionGiver.options[0].value : null);
+      if(cur) exclusionGiver.value = cur;
+      populateExclusionListFor(cur);
+    }
   }
 
   // For admins: show pairs as codenames so names are not plainly visible, but patterns can be checked
