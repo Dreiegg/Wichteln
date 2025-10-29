@@ -707,7 +707,7 @@ function render(){
     if(giverId){
   const giverUser = state.users.find(u=>u.id === giverId);
   const giverCode = displayCodename(giverUser.id);
-      assignedInfo.innerHTML += `<div class="giver" style="margin-top:8px"><strong>Du bekommst dein Geschenk von:</strong> ${giverCode}</div>`;
+      assignedInfo.innerHTML += `<div class="giver" style="margin-top:8px"><strong>Du wirst beschenkt von:</strong> ${giverCode}</div>`;
     } else {
       assignedInfo.innerHTML += `<div style="margin-top:8px"><em>Wer dir schenkt ist noch nicht gezogen.</em></div>`;
     }
