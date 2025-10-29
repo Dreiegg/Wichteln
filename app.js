@@ -605,11 +605,11 @@ function render(){
       const assignedUser = state.users.find(u=>u.id === assignedId);
       // Show only the username (no codename) when displaying who you gift
       const displayName = assignedUser.username;
-      if(assignedHeader) assignedHeader.textContent = `Person, die du beschenkst: ${displayName}`;
-      // render only the wishlist here (we moved the label into the header to avoid duplication)
-      assignedInfo.innerHTML = `<div class="assigned-wishlist"><pre>${(assignedUser.wishlist||'(keine)')}</pre></div>`;
+      if(assignedHeader) assignedHeader.textContent = `Du beschenkst (${displayName})`;
+      // render a small, subtle label and then the wishlist of the assigned person
+      assignedInfo.innerHTML = `<div class="assigned-wishlist-label small">Wunschliste von ${displayName}</div><div class="assigned-wishlist"><pre>${(assignedUser.wishlist||'(keine)')}</pre></div>`;
     } else {
-      if(assignedHeader) assignedHeader.textContent = 'Person, die du beschenkst';
+      if(assignedHeader) assignedHeader.textContent = 'Du beschenkst';
       assignedInfo.innerHTML = 'Du beschenkst im Moment niemanden.';
     }
 
