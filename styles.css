@@ -5,15 +5,19 @@
 	--muted:#666;
 
 	/* Accent choices (christmassy, similar darkness so white text stays readable) */
-	--accent-count: 8;
-	--accent-0: #8b1e1e; /* deep cranberry red */
-	--accent-5: #a31f34; /* crimson */
-	--accent-2: #1f5a3a; /* pine green */
-	--accent-7: #2c6e4a; /* holly green */
-	--accent-4: #2b7a78; /* teal (original) */
-	--accent-1: #5b1620; /* burgundy */
-	--accent-6: #8c5e2a; /* deep gold / brownish */
-	--accent-3: #7a2c3a; /* berry */
+		--accent-count: 12;
+		--accent-0: #8b1e1e; /* deep cranberry red */
+		--accent-1: #a31f34; /* crimson */
+		--accent-2: #1f5a3a; /* pine green */
+		--accent-3: #2c6e4a; /* holly green */
+		--accent-4: #2b7a78; /* teal (original) */
+		--accent-5: #5b1620; /* burgundy */
+		--accent-6: #d1842c; /* deep gold / brownish */
+		--accent-7: #7a2c3a; /* berry */
+		--accent-8: #102a43; /* navy */
+		--accent-9: #0b2545; /* midnight blue */
+		--accent-10: #5b2e6f; /* plum */
+		--accent-11: #0f5564; /* spruce */
 		/* Page background color (single-colored surface behind the card) */
 		--page-bg: #f5f5f4;
 }

@@ -36,18 +36,26 @@ function setNextAccent(){
       if(val) choices.push(val);
     }
     if(choices.length){
-      const storageKey = 'wichteln_accent_idx_v1';
-      const prevRaw = localStorage.getItem(storageKey);
-      const prev = prevRaw !== null ? parseInt(prevRaw, 10) : NaN;
-      let idx;
-      // If a valid previous index exists, increment (cycle); otherwise pick a random start.
-      if(Number.isInteger(prev) && prev >= 0 && prev < choices.length){
-        idx = (prev + 1) % choices.length;
-      } else {
-        idx = Math.floor(Math.random() * choices.length);
+      // Use a shuffled sequence stored in localStorage so colors are well-shuffled
+      // but still cycle deterministically through the shuffled order.
+      const seqKey = 'wichteln_accent_seq_v1';
+      const posKey = 'wichteln_accent_pos_v1';
+      let seq = null;
+      try{ const raw = localStorage.getItem(seqKey); seq = raw ? JSON.parse(raw) : null; }catch(e){ seq = null; }
+      const validSeq = Array.isArray(seq) && seq.length === choices.length && seq.every(n => Number.isInteger(n) && n >= 0 && n < choices.length);
+      if(!validSeq){
+        // create a new shuffled sequence of indices
+        seq = shuffle((function(){ const a=[]; for(let i=0;i<choices.length;i++) a.push(i); return a; })());
+        try{ localStorage.setItem(seqKey, JSON.stringify(seq)); }catch(e){}
+        try{ localStorage.setItem(posKey, '0'); }catch(e){}
       }
+      let pos = 0;
+      try{ const pr = localStorage.getItem(posKey); pos = pr !== null ? parseInt(pr,10) : 0; }catch(e){ pos = 0; }
+      if(!Number.isInteger(pos) || pos < 0 || pos >= seq.length) pos = 0;
+      const idx = seq[pos];
       root.style.setProperty('--accent', choices[idx]);
-      try{ localStorage.setItem(storageKey, String(idx)); }catch(e){ /* ignore */ }
+      pos = (pos + 1) % seq.length;
+      try{ localStorage.setItem(posKey, String(pos)); }catch(e){}
       _accentInitialized = true;
     }
   }catch(e){ /* ignore; fallback CSS var will apply */ }
