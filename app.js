@@ -194,6 +194,11 @@ function mergeSharedState(localState, remote, opts){
     if(!remoteById[u.id]) merged.users.push(Object.assign({}, u));
   });
 
+  // registrationEnabled: allow admin to toggle whether new registrations are allowed
+  merged.registrationEnabled = (typeof remote.registrationEnabled !== 'undefined') ? remote.registrationEnabled : (
+    (typeof localState.registrationEnabled !== 'undefined') ? localState.registrationEnabled : true
+  );
+
   return merged;
 }
 
@@ -231,6 +236,8 @@ async function ensureInitialData(){
   state.codenames = state.codenames || {};
   // ensure exclusions mapping exists
   state.exclusions = state.exclusions || {};
+  // ensure registration flag exists (default: enabled)
+  if(typeof state.registrationEnabled === 'undefined') state.registrationEnabled = true;
   // Remove ADMIN_CODENAME from any other user that might have it (keep it unique)
   Object.keys(state.codenames).forEach(k => {
     if(state.codenames[k] === ADMIN_CODENAME && k !== admin.id) delete state.codenames[k];
@@ -273,10 +280,23 @@ const exclusionList = document.getElementById('exclusionList');
 const saveExclusionsBtn = document.getElementById('saveExclusions');
 const clearExclusionsBtn = document.getElementById('clearExclusions');
 const deleteAllExceptAdminBtn = document.getElementById('deleteAllExceptAdmin');
+const registrationToggle = document.getElementById('registrationToggle');
 // User management is handled in Firebase Console; remove client-side management UI elements.
 
-showRegister.addEventListener('click', ()=>{ registerBox.classList.remove('hidden'); loginBox.classList.add('hidden'); });
+
 showLogin.addEventListener('click', ()=>{ registerBox.classList.add('hidden'); loginBox.classList.remove('hidden'); });
+
+// Prevent showing the register box when registration is disabled (safety for stray clicks)
+if(showRegister){
+  showRegister.addEventListener('click', (e)=>{
+    if(state && state.registrationEnabled === false){
+      e.preventDefault();
+      alert('Registrierung ist derzeit deaktiviert.');
+      return;
+    }
+    registerBox.classList.remove('hidden'); loginBox.classList.add('hidden');
+  });
+}
 
 // show admin key input only when admin checkbox is checked
 if(isAdminCheckbox){
@@ -304,6 +324,11 @@ registerForm.addEventListener('submit', async e=>{
   const isAdmin = !!f.get('isAdmin');
   const adminKey = f.get('adminKey');
   state = await loadSharedData();
+  // Respect admin-controlled registration flag
+  if(state.registrationEnabled === false){
+    alert('Registrierung ist derzeit vom Admin deaktiviert.');
+    return;
+  }
   // Prevent new registrations after pairs have been drawn to avoid duplicate/overlapping codename assignments
   if(state.pairs && Object.keys(state.pairs).length > 0){
     alert('Registrierung deaktiviert: Die Ziehung wurde bereits durchgeführt. Bitte setze die Pairs zurück, um neue Nutzer hinzuzufügen.');
@@ -489,6 +514,18 @@ if(saveExclusionsBtn){
   });
 }
 
+// Admin control: toggle registration on/off
+if(registrationToggle){
+  registrationToggle.addEventListener('change', async ()=>{
+    // Only allow admins to change this; load authoritative state and toggle
+    state = await loadSharedData();
+    state.registrationEnabled = !!registrationToggle.checked;
+    await saveSharedData(state);
+    alert('Registrierungs-Einstellung gespeichert');
+    render();
+  });
+}
+
 if(clearExclusionsBtn){
   clearExclusionsBtn.addEventListener('click', async ()=>{
     const giver = exclusionGiver && exclusionGiver.value; if(!giver) return;
@@ -658,7 +695,11 @@ function render(){
   l.textContent = `Nutzer: ${state.users.length}`;
   nav.appendChild(l);
 
-  if(!session.userId){ auth.classList.remove('hidden'); dashboard.classList.add('hidden'); return; }
+  if(!session.userId){ 
+    // Respect registration setting even on the login screen: hide the "Registrieren" button if disabled
+    try{ if(showRegister) showRegister.classList.toggle('hidden', state && state.registrationEnabled === false); }catch(e){}
+    if(!state || state.registrationEnabled === false){ try{ registerBox.classList.add('hidden'); }catch(e){} }
+    auth.classList.remove('hidden'); dashboard.classList.add('hidden'); return; }
 
   auth.classList.add('hidden'); dashboard.classList.remove('hidden');
   const me = state.users.find(u=>u.id === session.userId);
@@ -717,6 +758,10 @@ function render(){
 
   // admin
   adminArea.classList.toggle('hidden', !me.isAdmin);
+  // If admin area is visible, ensure the registration toggle reflects current state
+  if(me.isAdmin && registrationToggle){
+    try{ registrationToggle.checked = !!state.registrationEnabled; }catch(e){}
+  }
   if(usersList){
     usersList.innerHTML = '';
     state.users.forEach(u=>{
