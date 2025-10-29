@@ -21,7 +21,9 @@ let lastPairsRenderedAt = 0;
 // The list is defined as CSS variables --accent-0..--accent-(n-1) and --accent-count.
 // Choose a random accent color on each *session visit* but ensure it's different
 // from the last one stored in localStorage so each re-open shows a new color.
-(function pickRandomAccentFromCSS(){
+// Accent cycling helpers: set next accent from CSS variables and persist index.
+let _accentInitialized = false;
+function setNextAccent(){
   try{
     const root = document.documentElement;
     const cs = getComputedStyle(root);
@@ -38,22 +40,36 @@ let lastPairsRenderedAt = 0;
       const prevRaw = localStorage.getItem(storageKey);
       const prev = prevRaw !== null ? parseInt(prevRaw, 10) : NaN;
       let idx;
-      if(choices.length === 1){
-        idx = 0;
+      // If a valid previous index exists, increment (cycle); otherwise pick a random start.
+      if(Number.isInteger(prev) && prev >= 0 && prev < choices.length){
+        idx = (prev + 1) % choices.length;
       } else {
-        // try to pick an index different from prev; fall back to any random if prev invalid
-        const validPrev = Number.isInteger(prev) && prev >= 0 && prev < choices.length;
-        const options = [];
-        for(let i=0;i<choices.length;i++){
-          if(!validPrev || i !== prev) options.push(i);
-        }
-        idx = options[Math.floor(Math.random() * options.length)];
+        idx = Math.floor(Math.random() * choices.length);
       }
       root.style.setProperty('--accent', choices[idx]);
       try{ localStorage.setItem(storageKey, String(idx)); }catch(e){ /* ignore */ }
+      _accentInitialized = true;
     }
   }catch(e){ /* ignore; fallback CSS var will apply */ }
-})();
+}
+
+// Initialize accent on first load
+setNextAccent();
+
+// Change accent when the page becomes visible again (e.g. user switches away and back)
+// This avoids requiring a hard reload to see a new color.
+document.addEventListener('visibilitychange', ()=>{
+  try{
+    if(document.visibilityState === 'visible'){
+      // don't immediately change on the first load (already setNextAccent called)
+      if(_accentInitialized){
+        setNextAccent();
+      } else {
+        _accentInitialized = true;
+      }
+    }
+  }catch(e){/* ignore */}
+});
 
 // Firestore setup (optional)
 let useFirestore = false;
@@ -643,7 +659,7 @@ function render(){
       const assignedUser = state.users.find(u=>u.id === assignedId);
       // Show only the username (no codename) when displaying who you gift
       const displayName = assignedUser.username;
-      if(assignedHeader) assignedHeader.textContent = `Du beschenkst (${displayName})`;
+      if(assignedHeader) assignedHeader.textContent = `Du beschenkst ${displayName}`;
       // render a small, subtle label and then the wishlist of the assigned person
       assignedInfo.innerHTML = `<div class="assigned-wishlist-label small">Wunschliste von ${displayName}</div><div class="assigned-wishlist"><pre>${(assignedUser.wishlist||'(keine)')}</pre></div>`;
     } else {
