@@ -1,9 +1,28 @@
-:root{ --maxw:900px; --accent:#2b7a78; --muted:#666 }
+:root{
+	--maxw:900px;
+	/* Accent color — overridden on load with a random choice from the list below */
+	--accent: var(--accent-0);
+	--muted:#666;
+
+	/* Accent choices (christmassy, similar darkness so white text stays readable) */
+	--accent-count: 8;
+	--accent-0: #8b1e1e; /* deep cranberry red */
+	--accent-1: #a31f34; /* crimson */
+	--accent-2: #1f5a3a; /* pine green */
+	--accent-3: #2c6e4a; /* holly green */
+	--accent-4: #2b7a78; /* teal (original) */
+	--accent-5: #5b1620; /* burgundy */
+	--accent-6: #8c5e2a; /* deep gold / brownish */
+	--accent-7: #7a2c3a; /* berry */
+		/* Page background color (single-colored surface behind the card) */
+		--page-bg: #f5f5f4;
+}
 *{box-sizing:border-box;font-family:Segoe UI, Roboto, Arial, sans-serif}
 body{max-width:var(--maxw);margin:20px auto;padding:16px}
 header{display:flex;justify-content:space-between;align-items:center}
 h1{margin:0;color:var(--accent)}
-main{background:#fff;padding:16px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.06)}
+/* Make the page surface a flat, single-colored background so the card stands out */
+main{background:var(--page-bg);padding:16px;border-radius:0;box-shadow:none}
 form label{display:block;margin:8px 0}
 input, textarea{width:100%;padding:8px;border:1px solid #ddd;border-radius:4px}
 button{background:var(--accent);color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer}
@@ -22,18 +41,34 @@ pre{background:#f7f7f7;padding:8px;border-radius:6px}
 .assigned-wishlist pre{background:#f7f7f7;padding:8px;border-radius:6px;margin:0 0 8px 0;white-space:pre-wrap}
 /* Card for the assigned person + their wishlist */
 .card{
-	background: linear-gradient(180deg,#fff,#fff);
-	border-radius:8px;
-	box-shadow:0 2px 10px rgba(0,0,0,0.06);
-	overflow:hidden;
-	margin-bottom:12px;
-	transition:all 300ms ease;
+		background: linear-gradient(180deg,#fff,#fff);
+		border-radius:8px;
+		box-shadow:0 2px 10px rgba(0,0,0,0.06);
+		overflow:hidden;
+		margin-bottom:12px;
+		transition:transform 240ms ease, box-shadow 240ms ease;
+		transform-origin:center top;
 }
 .card-body{padding:12px 14px}
 .card.expanded .card-body{max-height:1000px;opacity:1}
 .card .card-border{display:block;width:100%;height:18px;object-fit:cover}
 .card .card-border-top{border-bottom:1px solid rgba(0,0,0,0.02)}
 .card .card-border-bottom{border-top:1px solid rgba(0,0,0,0.02)}
+
+/* Wrapper for border images so we can overlay a tint matching --accent */
+.card-border-wrapper{position:relative;display:block;overflow:hidden}
+.card-border-wrapper .card-border{display:block;width:100%;height:18px;object-fit:cover}
+.card-border-wrapper .card-border-tint{position:absolute;left:0;right:0;top:0;bottom:0;pointer-events:none;background:var(--accent);opacity:0.10;mix-blend-mode:multiply}
+.card-border-wrapper.card-border-top .card-border-tint{border-bottom-left-radius:4px;border-bottom-right-radius:4px}
+.card-border-wrapper.card-border-bottom .card-border-tint{border-top-left-radius:4px;border-top-right-radius:4px}
+
+/* Slight scale/raise on hover for pointer devices */
+@media (hover: hover) and (pointer: fine) {
+	.card:hover{
+		transform: translateY(-6px) scale(1.025);
+		box-shadow:0 8px 28px rgba(0,0,0,0.12);
+	}
+}
 
 /* Make the small label subtle */
 .small{font-size:12px;color:var(--muted)}

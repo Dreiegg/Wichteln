@@ -17,6 +17,44 @@ const wishlistDrafts = {};
 // remember last pairs timestamp we rendered to avoid UI jumps when remote syncs repeatedly
 let lastPairsRenderedAt = 0;
 
+// Pick a random accent color from the CSS-defined list on each page load.
+// The list is defined as CSS variables --accent-0..--accent-(n-1) and --accent-count.
+// Choose a random accent color on each *session visit* but ensure it's different
+// from the last one stored in localStorage so each re-open shows a new color.
+(function pickRandomAccentFromCSS(){
+  try{
+    const root = document.documentElement;
+    const cs = getComputedStyle(root);
+    const countRaw = cs.getPropertyValue('--accent-count') || '';
+    const count = parseInt(countRaw.trim(), 10) || 0;
+    const choices = [];
+    for(let i=0;i<count;i++){
+      const v = cs.getPropertyValue(`--accent-${i}`) || '';
+      const val = v.trim();
+      if(val) choices.push(val);
+    }
+    if(choices.length){
+      const storageKey = 'wichteln_accent_idx_v1';
+      const prevRaw = localStorage.getItem(storageKey);
+      const prev = prevRaw !== null ? parseInt(prevRaw, 10) : NaN;
+      let idx;
+      if(choices.length === 1){
+        idx = 0;
+      } else {
+        // try to pick an index different from prev; fall back to any random if prev invalid
+        const validPrev = Number.isInteger(prev) && prev >= 0 && prev < choices.length;
+        const options = [];
+        for(let i=0;i<choices.length;i++){
+          if(!validPrev || i !== prev) options.push(i);
+        }
+        idx = options[Math.floor(Math.random() * options.length)];
+      }
+      root.style.setProperty('--accent', choices[idx]);
+      try{ localStorage.setItem(storageKey, String(idx)); }catch(e){ /* ignore */ }
+    }
+  }catch(e){ /* ignore; fallback CSS var will apply */ }
+})();
+
 // Firestore setup (optional)
 let useFirestore = false;
 let firestoreDb = null;

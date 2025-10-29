@@ -40,14 +40,20 @@
       <h2 id="welcome"></h2>
 
       <div class="card expanded" id="assignedCard">
-        <!-- Top decorative border (hide if missing) -->
-        <img class="card-border card-border-top" src="assets/border-top.png" alt="" onerror="this.style.display='none'">
+        <!-- Top decorative border (hide if missing) with tint overlay -->
+        <div class="card-border-wrapper card-border-top">
+          <img class="card-border" src="assets/border-top.png" alt="" onerror="this.parentNode.style.display='none'">
+          <div class="card-border-tint" aria-hidden="true"></div>
+        </div>
         <div id="assignedArea" class="card-body">
           <h3 id="assignedHeader">Person, die du beschenkst</h3>
           <div id="assignedInfo">Noch keine Zuordnung vorhanden.</div>
         </div>
-        <!-- Bottom decorative border (hide if missing) -->
-        <img class="card-border card-border-bottom" src="assets/border-bottom.png" alt="" onerror="this.style.display='none'">
+        <!-- Bottom decorative border (hide if missing) with tint overlay -->
+        <div class="card-border-wrapper card-border-bottom">
+          <img class="card-border" src="assets/border-bottom.png" alt="" onerror="this.parentNode.style.display='none'">
+          <div class="card-border-tint" aria-hidden="true"></div>
+        </div>
       </div>
 
       <div id="userArea">
