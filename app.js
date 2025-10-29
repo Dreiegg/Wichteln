@@ -12,6 +12,26 @@ function uid(){ return 'u_' + Math.random().toString(36).slice(2,9); }
 // Local state; will be synced with Firestore if configured
 let state = {users: [], pairs: {}, codenames: {}};
 let session = {userId: null};
+const SESSION_KEY = 'wichteln_session_v1';
+
+function saveSession(){
+  try{ localStorage.setItem(SESSION_KEY, JSON.stringify(session || {})); }catch(e){}
+}
+function loadSession(){
+  try{
+    const raw = localStorage.getItem(SESSION_KEY);
+    if(!raw) return;
+    const parsed = JSON.parse(raw);
+    if(parsed && parsed.userId) session.userId = parsed.userId;
+  }catch(e){}
+}
+function clearSession(){
+  try{ localStorage.removeItem(SESSION_KEY); }catch(e){}
+  session.userId = null;
+}
+
+// restore cached session if present
+loadSession();
 // transient in-memory drafts per user to avoid clobbering in-progress edits
 const wishlistDrafts = {};
 // remember last pairs timestamp we rendered to avoid UI jumps when remote syncs repeatedly
@@ -273,7 +293,7 @@ loginForm.addEventListener('submit', async e=>{
   state = await loadSharedData();
   const user = state.users.find(u=>u.username === username && u.pwd === password);
   if(!user){ alert('Ungültige Anmeldedaten'); return; }
-  session.userId = user.id; render();
+  session.userId = user.id; saveSession(); render();
 });
 
 registerForm.addEventListener('submit', async e=>{
@@ -297,12 +317,12 @@ registerForm.addEventListener('submit', async e=>{
   const user = {id: uid(), username, pwd: password, isAdmin, wishlist: ''};
   state.users.push(user); await saveSharedData(state);
   // Auto-login the newly registered user so they can immediately edit their wishlist
-  session.userId = user.id;
+  session.userId = user.id; saveSession();
   // ensure UI updates to the dashboard
   render();
 });
 
-logoutBtn.addEventListener('click', ()=>{ session.userId = null; render(); });
+logoutBtn.addEventListener('click', ()=>{ clearSession(); render(); });
 
 wishlistForm.addEventListener('submit', async e=>{
   e.preventDefault();
@@ -497,7 +517,7 @@ if(deleteAllExceptAdminBtn){
     await saveSharedData(state);
     alert('Alle anderen Nutzer gelöscht');
     // if current session was not admin, log out
-    if(session.userId && session.userId !== adminUser.id) session.userId = null;
+    if(session.userId && session.userId !== adminUser.id) clearSession();
     render();
   });
 }
@@ -642,6 +662,13 @@ function render(){
 
   auth.classList.add('hidden'); dashboard.classList.remove('hidden');
   const me = state.users.find(u=>u.id === session.userId);
+  // If we have a cached session but that user no longer exists in the authoritative
+  // state (e.g. was deleted by an admin), clear the session and show the login view.
+  if(session.userId && !me){
+    clearSession();
+    auth.classList.remove('hidden'); dashboard.classList.add('hidden');
+    return;
+  }
   // Use robust display helper so admin always sees their reserved codename and we avoid raw ids.
   const myCode = displayCodename(me.id);
   // Show username with codename in the welcome line (admins should also see their codename)
