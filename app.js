@@ -486,7 +486,7 @@ function populateExclusionListFor(giverId){
     const id = u.id;
     const label = document.createElement('label');
     label.style.display = 'block';
-    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.dataset.id = id; cb.checked = exclusionsFor.includes(id);
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.value = id; cb.dataset.id = id; cb.checked = exclusionsFor.includes(id);
     label.appendChild(cb);
     label.appendChild(document.createTextNode(' ' + u.username));
     exclusionList.appendChild(label);
@@ -501,16 +501,21 @@ if(exclusionGiver){
 
 if(saveExclusionsBtn){
   saveExclusionsBtn.addEventListener('click', async ()=>{
-    const giver = exclusionGiver && exclusionGiver.value;
+    let giver = exclusionGiver && exclusionGiver.value;
     if(!giver){ alert('Bitte zuerst einen Schenkenden wählen'); return; }
+    // Normalize giver to string
+    giver = String(giver);
+    // Read only checkboxes inside the exclusionList to avoid accidental other inputs
     const checks = Array.from((exclusionList||document).querySelectorAll('input[type=checkbox]'));
-    const forbidden = checks.filter(c=>c.checked).map(c=>c.dataset.id);
+    const forbidden = checks.filter(c=>c.checked).map(c=>String(c.value || c.dataset.id)).filter(Boolean);
     state = await loadSharedData();
     state.exclusions = state.exclusions || {};
     if(forbidden.length) state.exclusions[giver] = forbidden; else delete state.exclusions[giver];
     await saveSharedData(state);
     alert('Ausnahmen gespeichert');
-    render();
+    // refresh UI and keep the same giver selected so admin can continue editing others
+    await (async ()=>{ state = await loadSharedData(); render(); })();
+    try{ if(exclusionGiver) exclusionGiver.value = giver; populateExclusionListFor(giver); }catch(e){}
   });
 }
 
@@ -528,12 +533,17 @@ if(registrationToggle){
 
 if(clearExclusionsBtn){
   clearExclusionsBtn.addEventListener('click', async ()=>{
-    const giver = exclusionGiver && exclusionGiver.value; if(!giver) return;
+    let giver = exclusionGiver && exclusionGiver.value; if(!giver) return;
+    giver = String(giver);
     if(!confirm('Ausnahmen für diesen Nutzer wirklich löschen?')) return;
     state = await loadSharedData();
+    state.exclusions = state.exclusions || {};
     if(state.exclusions) delete state.exclusions[giver];
     await saveSharedData(state);
+    // reload and repopulate list for the same giver
+    state = await loadSharedData();
     render();
+    try{ if(exclusionGiver) exclusionGiver.value = giver; populateExclusionListFor(giver); }catch(e){}
   });
 }
 
