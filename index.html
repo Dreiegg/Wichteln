@@ -60,6 +60,22 @@
         <p>Adminansicht: https://console.firebase.google.com/u/0/project/wichteln-6fe74/firestore/databases/-default-/data/~2Fshared~2Fwichteln</p>
         <h4>Aktuelle (kodierte) Pairs</h4>
         <pre id="pairsView">(noch keine Wünsche geäußert)</pre>
+        
+        <h4>Verbotene Ziehungen / Ausnahmen</h4>
+        <div id="exclusionsArea">
+          <label for="exclusionGiver">Wähle Schenkenden (wer nicht bestimmte Personen ziehen darf)</label>
+          <select id="exclusionGiver"></select>
+          <div id="exclusionList" style="margin-top:8px"></div>
+          <div class="row" style="margin-top:8px">
+            <button id="saveExclusions">Speichern</button>
+            <button id="clearExclusions">Zurücksetzen für Ausgewählten</button>
+          </div>
+        </div>
+
+        <h4>Verwaltung</h4>
+        <div class="row" style="margin-top:8px">
+          <button id="deleteAllExceptAdmin" style="background:#c0392b">Alle Nutzer löschen (außer Admin)</button>
+        </div>
         <div class="row" style="margin-top:8px">
           <button id="drawBtn">Ziehung durchführen</button>
           <button id="exportPairs">Exportieren</button>

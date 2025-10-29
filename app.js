@@ -88,6 +88,8 @@ function mergeSharedState(localState, remote, opts){
     merged.pairs = remote.pairs || localState.pairs || {};
   }
   merged.codenames = remote.codenames || {};
+  // carry over any configured exclusions (admin-managed)
+  merged.exclusions = remote.exclusions || localState.exclusions || {};
 
   // Build user maps by id for local and remote
   const localById = {};
@@ -145,6 +147,8 @@ async function ensureInitialData(){
   }
   // ensure codenames map exists
   state.codenames = state.codenames || {};
+  // ensure exclusions mapping exists
+  state.exclusions = state.exclusions || {};
   // Remove ADMIN_CODENAME from any other user that might have it (keep it unique)
   Object.keys(state.codenames).forEach(k => {
     if(state.codenames[k] === ADMIN_CODENAME && k !== admin.id) delete state.codenames[k];
@@ -182,6 +186,11 @@ const resetPairs = document.getElementById('resetPairs');
 const isAdminCheckbox = document.getElementById('isAdminCheckbox');
 const adminKeyInput = document.getElementById('adminKeyInput');
 const adminKeyLabel = document.getElementById('adminKeyLabel');
+const exclusionGiver = document.getElementById('exclusionGiver');
+const exclusionList = document.getElementById('exclusionList');
+const saveExclusionsBtn = document.getElementById('saveExclusions');
+const clearExclusionsBtn = document.getElementById('clearExclusions');
+const deleteAllExceptAdminBtn = document.getElementById('deleteAllExceptAdmin');
 // User management is handled in Firebase Console; remove client-side management UI elements.
 
 showRegister.addEventListener('click', ()=>{ registerBox.classList.remove('hidden'); loginBox.classList.add('hidden'); });
@@ -315,11 +324,13 @@ if(drawBtn){
         state.codenames[needCode[i].id] = shuffledAvail[i];
       }
 
-    // Now create a Sattolo cycle for gifting (ensures a single cycle permutation)
-    const ids = state.users.map(u=>u.id);
-    const cycle = sattolo(ids.slice());
-    const pairs = {};
-    for(let i=0;i<cycle.length;i++) pairs[cycle[i]] = cycle[(i+1)%cycle.length];
+    // Now compute pairs honoring any admin-configured exclusions.
+    state.exclusions = state.exclusions || {};
+    const pairs = computePairsWithExclusions(state.users, state.exclusions);
+    if(!pairs){
+      alert('Es konnte keine gültige Zuordnung gefunden werden, die alle Ausschlüsse einhält. Bitte überprüfe die Ausnahmen im Admin-Panel.');
+      return;
+    }
     state.pairs = pairs;
     // mark when pairs were last updated so clients can resolve sync conflicts deterministically
     state.meta = state.meta || {};
@@ -346,6 +357,86 @@ if(resetPairs){
     state.meta.pairsUpdatedAt = Date.now();
     await saveSharedData(state);
     render(); 
+  });
+}
+
+// --- Admin: exclusions UI handlers ---
+function populateExclusionGiverSelect(){
+  if(!exclusionGiver) return;
+  exclusionGiver.innerHTML = '';
+  (state.users || []).forEach(u => {
+    const opt = document.createElement('option'); opt.value = u.id; opt.textContent = u.username; exclusionGiver.appendChild(opt);
+  });
+}
+
+function populateExclusionListFor(giverId){
+  if(!exclusionList) return;
+  exclusionList.innerHTML = '';
+  if(!giverId) return;
+  const exclusionsFor = (state.exclusions && state.exclusions[giverId]) ? state.exclusions[giverId] : [];
+  (state.users || []).forEach(u => {
+    if(u.id === giverId) return; // cannot exclude self
+    const id = u.id;
+    const label = document.createElement('label');
+    label.style.display = 'block';
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.dataset.id = id; cb.checked = exclusionsFor.includes(id);
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(' ' + u.username));
+    exclusionList.appendChild(label);
+  });
+}
+
+if(exclusionGiver){
+  exclusionGiver.addEventListener('change', ()=>{
+    populateExclusionListFor(exclusionGiver.value);
+  });
+}
+
+if(saveExclusionsBtn){
+  saveExclusionsBtn.addEventListener('click', async ()=>{
+    const giver = exclusionGiver && exclusionGiver.value;
+    if(!giver){ alert('Bitte zuerst einen Schenkenden wählen'); return; }
+    const checks = Array.from((exclusionList||document).querySelectorAll('input[type=checkbox]'));
+    const forbidden = checks.filter(c=>c.checked).map(c=>c.dataset.id);
+    state = await loadSharedData();
+    state.exclusions = state.exclusions || {};
+    if(forbidden.length) state.exclusions[giver] = forbidden; else delete state.exclusions[giver];
+    await saveSharedData(state);
+    alert('Ausnahmen gespeichert');
+    render();
+  });
+}
+
+if(clearExclusionsBtn){
+  clearExclusionsBtn.addEventListener('click', async ()=>{
+    const giver = exclusionGiver && exclusionGiver.value; if(!giver) return;
+    if(!confirm('Ausnahmen für diesen Nutzer wirklich löschen?')) return;
+    state = await loadSharedData();
+    if(state.exclusions) delete state.exclusions[giver];
+    await saveSharedData(state);
+    render();
+  });
+}
+
+if(deleteAllExceptAdminBtn){
+  deleteAllExceptAdminBtn.addEventListener('click', async ()=>{
+    if(!confirm('Alle Nutzer ausser dem Admin wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.')) return;
+    state = await loadSharedData();
+    const adminUser = state.users.find(u => u.username === ADMIN_USERNAME);
+    if(!adminUser){ alert('Admin nicht gefunden — Abbruch'); return; }
+    // keep only admin
+    state.users = [adminUser];
+    state.pairs = {};
+    state.codenames = {};
+    state.codenames[adminUser.id] = ADMIN_CODENAME;
+    state.exclusions = {};
+    state.meta = state.meta || {};
+    state.meta.pairsUpdatedAt = Date.now();
+    await saveSharedData(state);
+    alert('Alle anderen Nutzer gelöscht');
+    // if current session was not admin, log out
+    if(session.userId && session.userId !== adminUser.id) session.userId = null;
+    render();
   });
 }
 
@@ -378,7 +469,43 @@ function shuffle(array){
   return a;
 }
 
-// Simple deterministic obfuscation for ids using a salted djb2 hash -> base36
+
+// Compute a valid assignment (pairs) honoring per-giver exclusions.
+// users: array of user objects with .id
+// exclusions: object mapping giverId -> array of forbidden receiverIds
+// Returns a mapping giverId -> receiverId or null if impossible
+function computePairsWithExclusions(users, exclusions){
+  const ids = users.map(u => u.id);
+  const excl = exclusions || {};
+  const allowed = {};
+  for(const g of ids){
+    allowed[g] = ids.filter(r => r !== g && !(excl[g] && excl[g].includes(r)));
+    if(allowed[g].length === 0) return null; // impossible for this giver
+  }
+
+  // Backtracking with heuristic: assign givers with fewest options first
+  const givers = ids.slice().sort((a,b) => allowed[a].length - allowed[b].length);
+  const used = new Set();
+  const assignment = {};
+
+  function dfs(i){
+    if(i === givers.length) return true;
+    const g = givers[i];
+    // try receivers in random order to avoid pathological deterministic failures
+    const options = shuffle(allowed[g].slice());
+    for(const r of options){
+      if(used.has(r)) continue;
+      used.add(r); assignment[g] = r;
+      if(dfs(i+1)) return true;
+      used.delete(r); delete assignment[g];
+    }
+    return false;
+  }
+
+  if(dfs(0)) return assignment;
+  return null;
+}
+
 // List of christmassy codenames (at least 10)
 const CODENAMES = [
   'Claus 🎅', 'Rudolph 🦌', 'MrsSanta 🎀', 'Mistletoe 🌿', 'Krampus 👹', 'Frosty ⛄', 'Holly 🌿', 'Jingle 🔔', 'Tinsel 🎗️', 'Sleigh 🛷', 'Donner ⚡', 'Blitzen ✨',
@@ -509,6 +636,15 @@ function render(){
       li.innerHTML = `${u.username} ${u.isAdmin?'<em>admin</em>':''}`;
       usersList.appendChild(li);
     });
+  }
+
+  // populate exclusions UI for admins
+  if(me.isAdmin && exclusionGiver){
+    populateExclusionGiverSelect();
+    // pick previously selected giver if it exists in the select, otherwise choose first
+    const cur = exclusionGiver.value || (exclusionGiver.options.length? exclusionGiver.options[0].value : null);
+    if(cur) exclusionGiver.value = cur;
+    populateExclusionListFor(cur);
   }
 
   // For admins: show pairs as codenames so names are not plainly visible, but patterns can be checked
