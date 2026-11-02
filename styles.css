@@ -1,19 +1,155 @@
-:root{ --maxw:900px; --accent:#2b7a78; --muted:#666 }
-*{box-sizing:border-box;font-family:Segoe UI, Roboto, Arial, sans-serif}
-body{max-width:var(--maxw);margin:20px auto;padding:16px}
-header{display:flex;justify-content:space-between;align-items:center}
-h1{margin:0;color:var(--accent)}
-main{background:#fff;padding:16px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.06)}
-form label{display:block;margin:8px 0}
-input, textarea{width:100%;padding:8px;border:1px solid #ddd;border-radius:4px}
-button{background:var(--accent);color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer}
-.row{display:flex;gap:8px;margin-top:8px}
-.hidden{display:none}
-pre{background:#f7f7f7;padding:8px;border-radius:6px}
-/* Tighter grouping for the assigned person's wishlist and the user's wishlist */
-#assignedArea{margin-bottom:6px}
-#assignedArea h3{margin-bottom:6px}
-.assigned-wishlist pre{background:#f7f7f7;padding:8px;border-radius:6px;margin:0 0 8px 0;white-space:pre-wrap}
-#userArea{margin-top:6px}
-footer{margin-top:12px;color:var(--muted);font-size:12px}
-ul{padding-left:16px}
+:root{
+  --grund:#5E7457;
+  --karte:#F6EEE2;
+  --creme:#EDDFCB;
+  --weiss:#FFFFFF;
+  --tinte:#2A2320;
+  --leise:#6A5D52;
+  --weinrot:#7A2526;
+  --weinrot-dunkel:#5C1B1C;
+  --terrakotta:#BC6B4F;
+  --gruen:#4B6146;
+  --warnung:#A2502F;
+  --linie:#E2D6C5;
+  --rand:#CDBFAC;
+  --schrift-titel:'Bricolage Grotesque', system-ui, sans-serif;
+  --schrift:'Nunito Sans', system-ui, sans-serif;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;min-height:100vh;background:var(--grund);font-family:var(--schrift);color:var(--tinte);font-size:16px;line-height:1.4}
+[hidden]{display:none !important}
+a{color:var(--weinrot)}a:hover{color:var(--weinrot-dunkel)}
+h1,h2,h3,h4{margin:0}
+button,input,select{font:inherit;color:inherit}
+
+/* Schnee */
+.schnee{position:fixed;inset:0;overflow:hidden;pointer-events:none;z-index:0}
+.flocke{position:absolute;top:-40px;animation:fallen linear infinite}
+.flocke span{display:block;width:100%;height:100%;animation:wiegen ease-in-out infinite alternate}
+.flocke svg{display:block;width:100%;height:100%;fill:none;stroke:#fff;stroke-width:1.6;stroke-linecap:round}
+@keyframes fallen{from{transform:translateY(0)}to{transform:translateY(calc(100vh + 80px))}}
+@keyframes wiegen{0%{transform:translateX(-7px) rotate(-35deg)}100%{transform:translateX(7px) rotate(35deg)}}
+@media (prefers-reduced-motion: reduce){.flocke,.flocke span{animation:none}.flocke{top:auto}}
+
+/* Grundgerüst */
+.seite{position:relative;z-index:1;max-width:480px;margin:0 auto;padding:20px 36px 48px}
+.ansicht{display:flex;flex-direction:column;gap:20px}
+.kopf{display:flex;justify-content:space-between;align-items:center;min-height:48px;gap:8px}
+.marke{display:flex;align-items:center;gap:10px;color:var(--weiss);font-family:var(--schrift-titel);font-weight:700;font-size:22px}
+.marke svg{width:26px;height:26px;fill:none;stroke:var(--creme);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.kopf-aktionen{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.begruessung{color:var(--weiss)}
+.begruessung h1,.seitentitel{font-family:var(--schrift-titel);font-weight:700;font-size:34px;line-height:1.1;color:var(--weiss)}
+.begruessung p{margin:8px 0 0;font-size:15px}
+.begruessung strong{color:var(--creme)}
+.hinweis-hell{margin:0;color:var(--weiss);font-size:14px}
+.zentriert{text-align:center}
+
+/* Anmelden */
+.login-kopf{text-align:center;color:var(--weiss);padding-top:56px}
+.logo-gross{width:56px;height:56px;fill:none;stroke:var(--creme);stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.login-kopf h1{margin-top:12px;font-family:var(--schrift-titel);font-size:40px;line-height:1}
+
+/* Karten */
+.karte{background:var(--karte);border-radius:22px;padding:22px}
+.karte-creme{background:var(--creme)}
+.karte-titel{font-family:var(--schrift-titel);font-size:22px;font-weight:700;margin-bottom:4px}
+.unterkopf{font-size:16px;font-weight:700;margin-bottom:10px}
+.leise{margin:0 0 12px;font-size:14px;color:var(--leise)}
+.leise-dunkel{font-size:14px;color:#5A4A3E;margin-top:2px}
+.fett{font-weight:700}
+.etikett{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--weinrot)}
+.empfaenger{margin:6px 0 0;font-family:var(--schrift-titel);font-weight:700;font-size:36px;line-height:1.05;overflow-wrap:anywhere}
+.trenner{height:1px;background:var(--linie);margin:18px 0}
+.titel-zeile{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+#dichBeschenkt{display:flex;gap:14px;align-items:center;padding:20px 22px}
+.glocke{flex:none;width:48px;height:48px;border-radius:14px;background:var(--weiss);display:flex;align-items:center;justify-content:center}
+.glocke svg{width:28px;height:28px;fill:none;stroke:var(--terrakotta);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.codename-icon{width:20px;height:20px;vertical-align:-4px;margin-left:4px}
+
+.eckdaten{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.eckdaten div{padding:10px 14px;border-radius:14px;background:var(--creme)}
+.eckdaten span{display:block;font-size:12px;color:var(--leise)}
+.eckdaten strong{display:block;font-size:15px;margin-top:2px;overflow-wrap:anywhere}
+
+/* Wunschlisten */
+.wunschliste{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.wunsch{display:flex;gap:6px;align-items:center;min-height:52px;padding:4px 6px;background:var(--weiss);border-radius:12px;font-size:15px}
+.wunsch.eigen{border:1px solid var(--linie);padding-left:10px}
+.wunsch-text{flex:1;min-width:0;overflow-wrap:anywhere}
+.wunsch-unter{font-size:13px;color:var(--leise)}
+.icon-knopf{flex:none;width:44px;height:44px;border:none;background:transparent;border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.icon-knopf:hover{background:var(--karte)}
+.icon-knopf svg{width:18px;height:18px;fill:none;stroke:var(--leise);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.stern svg{width:20px;height:20px;stroke:var(--leise)}
+.stern[aria-pressed="true"] svg{fill:var(--terrakotta);stroke:var(--terrakotta)}
+.vorschau{flex:none;width:44px;height:44px;padding:0;border:none;border-radius:10px;overflow:hidden;background:var(--creme);cursor:pointer}
+.vorschau img{width:100%;height:100%;object-fit:cover;display:block}
+.link{flex:none;display:flex;align-items:center;gap:4px;min-height:44px;padding:0 6px;font-size:14px;font-weight:700;text-decoration:none}
+.link svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+
+.wunsch-form{margin-top:16px;padding:16px;border-radius:16px;background:var(--creme);display:flex;flex-direction:column;gap:12px}
+
+/* Formulare */
+.formular{display:flex;flex-direction:column;gap:14px}
+.feld{display:flex;flex-direction:column;gap:6px}
+.feld label,.feld .label{font-size:14px;font-weight:700}
+.optional{font-weight:400;color:var(--leise)}
+input,select{min-height:48px;padding:0 14px;border:1px solid var(--rand);border-radius:12px;background:var(--weiss);font-size:16px;min-width:0;width:100%}
+input:focus-visible,select:focus-visible,button:focus-visible,a:focus-visible,.knopf-gestrichelt:focus-within{outline:3px solid var(--terrakotta);outline-offset:2px}
+.eingabe-reihe{display:flex;gap:8px}
+.eingabe-reihe input{flex:1}
+.zwei-spalten{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.unsichtbar{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.fehler{margin:0;font-size:14px;font-weight:700;color:var(--weinrot)}
+.erfolg{margin:0;font-size:14px;font-weight:700;color:var(--gruen)}
+
+/* Knöpfe */
+.knopf{min-height:48px;padding:0 16px;border-radius:12px;border:none;font-weight:700;font-size:15px;cursor:pointer}
+.knopf:disabled{opacity:.6;cursor:wait}
+.knopf-haupt{background:var(--weinrot);color:var(--weiss)}
+.knopf-haupt:hover{background:var(--weinrot-dunkel)}
+.knopf-gruen{background:var(--gruen);color:var(--weiss)}
+.knopf-zweit{background:var(--weiss);border:1px solid var(--rand);color:var(--tinte);white-space:nowrap}
+.knopf-reihe{display:flex;gap:8px}
+.knopf-reihe .knopf-haupt,.knopf-reihe .knopf-gruen{flex:1}
+.knopf-rand{min-height:44px;padding:0 14px;border:1px solid rgba(255,255,255,.55);border-radius:999px;background:transparent;color:var(--weiss);font-weight:600;font-size:14px;cursor:pointer}
+.knopf-zurueck{display:flex;align-items:center;gap:6px;min-height:44px;padding:0;border:none;background:none;color:var(--weiss);font-weight:600;font-size:15px;cursor:pointer}
+.knopf-zurueck svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.knopf-text{min-height:44px;padding:0 10px;border:none;background:none;color:var(--weinrot);font-weight:700;font-size:14px;cursor:pointer}
+.knopf-text.dunkel{color:#5A4A3E;font-weight:600;text-decoration:underline}
+.knopf-gestrichelt{display:flex;align-items:center;justify-content:center;min-height:48px;border:1px dashed #B8A994;border-radius:12px;background:var(--weiss);font-weight:700;font-size:15px;cursor:pointer}
+.bild-gewaehlt{display:flex;align-items:center;gap:10px;padding:4px;border-radius:12px;background:var(--weiss);border:1px solid var(--rand)}
+.bild-gewaehlt img{width:44px;height:44px;border-radius:10px;object-fit:cover}
+.bild-gewaehlt span{flex:1;font-size:14px}
+
+/* Organisation */
+.balken{height:8px;border-radius:999px;background:var(--linie);margin:0 0 12px;overflow:hidden}
+.balken div{height:100%;width:0;background:var(--gruen);transition:width .3s}
+.personen{list-style:none;margin:0;padding:0}
+.person{display:flex;align-items:center;gap:4px;min-height:56px;border-bottom:1px solid var(--linie)}
+.person:last-child{border-bottom:none}
+.person-info{flex:1;min-width:0}
+.person-name{font-weight:700;overflow-wrap:anywhere}
+.person-status{font-size:13px;font-weight:700;color:var(--gruen)}
+.person-status.leer{color:var(--warnung)}
+.person-login{font-size:12px;color:var(--leise)}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.chip{display:flex;align-items:center;gap:2px;padding:2px 2px 2px 12px;border-radius:999px;background:var(--weiss);font-size:14px;font-weight:600}
+.chip .icon-knopf{width:36px;height:36px}
+.ausnahme-neu{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:8px;align-items:center}
+.ausnahme-neu .knopf{grid-column:1 / -1}
+.ziehung{display:flex;flex-direction:column;gap:12px}
+.ziehung p{margin:0;font-size:14px;color:#5A4A3E}
+
+/* Bild groß */
+.bild-dialog{border:none;padding:16px;border-radius:20px;background:transparent;max-width:min(560px,92vw);text-align:center}
+.bild-dialog::backdrop{background:rgba(30,24,20,.9)}
+.bild-dialog img{display:block;max-width:100%;max-height:70vh;margin:0 auto;border-radius:14px}
+.bild-dialog p{color:var(--weiss);font-weight:700;font-size:17px;margin:14px 0}
+
+@media (max-width:360px){
+  .seite{padding-left:28px;padding-right:28px}
+  .zwei-spalten{grid-template-columns:1fr}
+}

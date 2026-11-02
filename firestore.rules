@@ -1,0 +1,56 @@
+rules_version = '2';
+
+// Sicherheitsregeln für Wichteln.
+// Wichtig: Die Admin-Adresse unten muss zu ADMIN_NAME und EMAIL_DOMAIN in app.js passen.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function angemeldet() { return request.auth != null; }
+    function istAdmin() { return angemeldet() && request.auth.token.email == 'toni@wichteln.example'; }
+    function istIch(uid) { return angemeldet() && request.auth.uid == uid; }
+
+    // Namen und Anrede: alle Angemeldeten lesen, nur die Organisatorin schreibt.
+    match /personen/{uid} {
+      allow read: if angemeldet();
+      allow write: if istAdmin();
+    }
+
+    // Datum, Budget, Ausnahmen, Ziehungsstatus.
+    match /einstellungen/{doc} {
+      allow read: if angemeldet();
+      allow write: if istAdmin();
+    }
+
+    // Wünsche: alle Angemeldeten lesen, jede Person bearbeitet nur ihre eigenen.
+    match /wuensche/{id} {
+      allow read: if angemeldet();
+      allow create: if angemeldet()
+        && request.resource.data.owner == request.auth.uid
+        && request.resource.data.text is string
+        && request.resource.data.text.size() <= 200;
+      allow update: if angemeldet()
+        && resource.data.owner == request.auth.uid
+        && request.resource.data.owner == request.auth.uid
+        && request.resource.data.text.size() <= 200;
+      allow delete: if angemeldet() && (resource.data.owner == request.auth.uid || istAdmin());
+    }
+
+    // Wer wen beschenkt: nur die Person selbst darf ihre Zuteilung lesen.
+    // Die Organisatorin darf sie schreiben und löschen, aber nicht lesen.
+    match /zuteilung/{uid} {
+      allow read: if istIch(uid);
+      allow create, update, delete: if istAdmin();
+    }
+
+    // Persönliche Merkliste (Sterne).
+    match /privat/{uid} {
+      allow read, write: if istIch(uid);
+    }
+
+    // Alte Version: nur noch löschen.
+    match /shared/{doc} {
+      allow delete: if istAdmin();
+    }
+  }
+}

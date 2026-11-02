@@ -1,552 +1,767 @@
-// Simple client-side Secret Santa (Wichteln) app
-// Stores users, wishlists and pairs in localStorage. Single-file app logic.
+// Wichteln – Familienversion
+// Anmeldung über Firebase Authentication, Daten in Firestore.
+// Bilder werden im Browser verkleinert und direkt im Wunsch gespeichert (kein Firebase Storage nötig).
 
-const LS_KEY = 'wichteln_data_v1';
+'use strict';
 
-// Admin defaults (keeps a stable admin & codename)
-const ADMIN_USERNAME = 'Toni';
-const ADMIN_CODENAME = 'Claus 🎅';
+/* ---------- Einstellungen ---------- */
 
-function uid(){ return 'u_' + Math.random().toString(36).slice(2,9); }
+// Anmeldenamen werden intern zu einer E-Mail-Adresse: "Oma Gerda" -> oma-gerda@wichteln.example
+// Diese Domain gibt es nicht; es werden nie E-Mails verschickt.
+const EMAIL_DOMAIN = 'wichteln.example';
+const ADMIN_NAME = 'Toni';
 
-// Local state; will be synced with Firestore if configured
-let state = {users: [], pairs: {}, codenames: {}};
-let session = {userId: null};
-// transient in-memory drafts per user to avoid clobbering in-progress edits
-const wishlistDrafts = {};
-// remember last pairs timestamp we rendered to avoid UI jumps when remote syncs repeatedly
-let lastPairsRenderedAt = 0;
+// Codenamen: zuerst die Hauptliste, bei mehr Personen die Reserve.
+// Icons: Dateipfad eintragen, z. B. icon: 'icons/vanillekipferl.svg'
+const CODENAMEN = [
+  { name: 'Vanillekipferl', icon: '' },
+  { name: 'Tannenbaum', icon: '' },
+  { name: 'Schneemann', icon: '' },
+  { name: 'Schneepflugfahrer', icon: '' },
+  { name: 'Maroni', icon: '' },
+  { name: 'Liftinger', icon: '' },
+  { name: 'Hüttenzauber', icon: '' },
+  { name: 'Lebkuchen', icon: '' },
+  { name: 'Profi-Schlittenfahrer', icon: '' },
+  { name: 'Eierlikör', icon: '' }
+];
+const CODENAMEN_RESERVE = [
+  { name: 'Christkind', icon: '' },
+  { name: 'Zimtstern', icon: '' },
+  { name: 'Nussknacker', icon: '' },
+  { name: 'Krampus', icon: '' },
+  { name: 'Nikolaus', icon: '' },
+  { name: 'Spekulatius', icon: '' },
+  { name: 'Mistelzweig', icon: '' },
+  { name: 'Schneeflocke', icon: '' },
+  { name: 'Rentier', icon: '' },
+  { name: 'Apfelstrudel', icon: '' }
+];
 
-// Firestore setup (optional)
-let useFirestore = false;
-let firestoreDb = null;
-if(window && window.firebaseConfig){
-  try{
-    const app = firebase.initializeApp(window.firebaseConfig);
-    firestoreDb = firebase.firestore();
-    useFirestore = true;
-    console.log('Firestore enabled');
-  }catch(e){ console.warn('Firestore init failed', e); }
-}
+const PASSWORT_WOERTER = ['Tanne', 'Keks', 'Stern', 'Schnee', 'Glocke', 'Zimt', 'Kerze', 'Schlitten', 'Mandel', 'Punsch', 'Engel', 'Kipferl'];
 
-function loadData(){
-  const raw = localStorage.getItem(LS_KEY);
-  if(!raw) return {users: [], pairs: {}, codenames: {}};
-  try{
-    const parsed = JSON.parse(raw) || {};
-    // ensure shape compatibility for older data
-    parsed.users = parsed.users || [];
-    parsed.pairs = parsed.pairs || {};
-    parsed.codenames = parsed.codenames || {};
-    return parsed;
-  }catch(e){return {users:[], pairs:{}, codenames:{}}}
-}
+/* ---------- Hilfsfunktionen ---------- */
 
-function saveDataLocal(d){ localStorage.setItem(LS_KEY, JSON.stringify(d)); }
+const $ = id => document.getElementById(id);
 
-async function loadSharedData(){
-  if(!useFirestore) return loadData();
-  // read from Firestore doc 'shared/wichteln'
-  try{
-    const doc = await firestoreDb.collection('shared').doc('wichteln').get();
-    if(!doc.exists) return loadData();
-    const d = doc.data() || {};
-    // normalize shape and remove any legacy displayName fields
-    d.users = d.users || [];
-    d.pairs = d.pairs || {};
-    d.codenames = d.codenames || {};
-    d.users.forEach(u => { if(u && u.displayName) delete u.displayName; });
-    return d;
-  }catch(e){ console.warn('loadSharedData failed', e); return loadData(); }
-}
-
-// Merge remote shared state into a local state snapshot while preserving
-// ephemeral local drafts (wishlistDrafts) and the current session where possible.
-function mergeSharedState(localState, remote, opts){
-  if(!remote) return localState;
-  opts = opts || {};
-  const merged = { users: [], pairs: {}, codenames: {} };
-  // By default accept remote pairs/codenames, but allow preserving local pairs when the
-  // current user has unsaved edits to avoid distracting jumps while they type.
-  const preservePairsIfEditing = !!opts.preservePairsIfEditing;
-  const currentUserId = opts.currentUserId;
-  // Determine authoritative pairs using timestamps when available, unless we're preserving
-  // local pairs because the current user is actively editing a wishlist.
-  const localUpdated = (localState && localState.meta && localState.meta.pairsUpdatedAt) ? localState.meta.pairsUpdatedAt : 0;
-  const remoteUpdated = (remote && remote.meta && remote.meta.pairsUpdatedAt) ? remote.meta.pairsUpdatedAt : 0;
-  if(preservePairsIfEditing && currentUserId && wishlistDrafts[currentUserId]){
-    merged.pairs = (localState && localState.pairs) ? localState.pairs : (remote.pairs || {});
-  } else if(remoteUpdated || localUpdated){
-    // choose the most recent update
-    if(remoteUpdated > localUpdated){
-      merged.pairs = remote.pairs || {};
-    } else {
-      merged.pairs = localState.pairs || {};
-    }
-  } else {
-    // fallback: prefer remote if present
-    merged.pairs = remote.pairs || localState.pairs || {};
+function el(tag, attrs, ...kinder) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k === 'text') e.textContent = v;
+    else if (k === 'svg') e.innerHTML = v; // nur für feste Icons aus ICON
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else e.setAttribute(k, v === true ? '' : v);
   }
-  merged.codenames = remote.codenames || {};
-
-  // Build user maps by id for local and remote
-  const localById = {};
-  (localState.users || []).forEach(u => { if(u && u.id) localById[u.id] = u; });
-  const remoteById = {};
-  (remote.users || []).forEach(u => { if(u && u.id) remoteById[u.id] = u; });
-
-  // Start from remote users (authoritative list), but preserve local wishlist drafts
-  (remote.users || []).forEach(u => {
-    const copy = Object.assign({}, u);
-    // If we have a transient draft for this user, keep it out of the persisted wishlist
-    if(localById[u.id] && wishlistDrafts[u.id]){
-      // keep copy.wishlist as remote.wishlist (persisted), drafts are kept separately
-    }
-    merged.users.push(copy);
-  });
-
-  // If there are local-only users not present in remote (rare), append them
-  (localState.users || []).forEach(u => {
-    if(!remoteById[u.id]) merged.users.push(Object.assign({}, u));
-  });
-
-  return merged;
+  kinder.flat().forEach(c => { if (c != null) e.append(c); });
+  return e;
 }
 
-async function saveSharedData(d){
-  if(!useFirestore){ saveDataLocal(d); return; }
-  try{
-    // Persist the full state (including codenames) to Firestore so codenames remain stable across devices.
-    // But remove any legacy `displayName` fields from users before writing to the DB.
-    const toSave = JSON.parse(JSON.stringify(d || {}));
-    toSave.users = toSave.users || [];
-    toSave.pairs = toSave.pairs || {};
-    toSave.codenames = toSave.codenames || {};
-    toSave.users.forEach(u => { if(u && u.displayName) delete u.displayName; });
-    await firestoreDb.collection('shared').doc('wichteln').set(toSave);
-    // also keep local copy (use the sanitized version so localStorage and Firestore stay consistent)
-    saveDataLocal(toSave);
-  }catch(e){ console.warn('saveSharedData failed', e); saveDataLocal(d);}  
+const pfad = d => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
+const ICON = {
+  stern: pfad('M12 3l2.6 5.6 6 .6-4.5 4 1.3 6L12 16.3 6.6 19.2l1.3-6-4.5-4 6-.6z'),
+  stift: pfad('M4 20h4L19 9l-4-4L4 16z'),
+  kreuz: pfad('M6 6l12 12M18 6L6 18'),
+  extern: pfad('M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5'),
+  flocke: pfad('M12 2v20M3.3 7l17.4 10M3.3 17l17.4-10M9.5 3.5L12 6l2.5-2.5M9.5 20.5L12 18l2.5 2.5')
+};
+
+function loginName(name) {
+  return String(name).trim().toLowerCase()
+    .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+const emailFuer = name => `${loginName(name)}@${EMAIL_DOMAIN}`;
+const ADMIN_EMAIL = emailFuer(ADMIN_NAME);
+
+function zeigeMeldung(elem, text) { elem.textContent = text || ''; elem.hidden = !text; }
+
+function datumAnzeigen(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : '–';
 }
 
-// init demo admin if no users
-async function ensureInitialData(){
-  const loaded = await loadSharedData();
-  state = loaded || {users: [], pairs: {}, codenames: {}};
-  // Ensure a stable admin account exists with username 'Toni' and codename 'Claus 🎅'
-  const ADMIN_USERNAME = 'Toni';
-  const ADMIN_CODENAME = 'Claus 🎅';
-  let admin = state.users.find(u => u.username === ADMIN_USERNAME);
-  if(!admin){
-    admin = { id: uid(), username: ADMIN_USERNAME, pwd: 'admin', isAdmin: true, wishlist: '' };
-    state.users.push(admin);
-  } else {
-    admin.isAdmin = true; // ensure admin flag
-  }
-  // ensure codenames map exists
-  state.codenames = state.codenames || {};
-  // Remove ADMIN_CODENAME from any other user that might have it (keep it unique)
-  Object.keys(state.codenames).forEach(k => {
-    if(state.codenames[k] === ADMIN_CODENAME && k !== admin.id) delete state.codenames[k];
-  });
-  // Assign admin's codename
-  state.codenames[admin.id] = ADMIN_CODENAME;
-  await saveSharedData(state);
+function sichererLink(text) {
+  if (!text) return '';
+  let t = text.trim();
+  if (!/^https?:\/\//i.test(t)) t = 'https://' + t;
+  try {
+    const u = new URL(t);
+    return (u.protocol === 'http:' || u.protocol === 'https:') ? u.href : '';
+  } catch (e) { return ''; }
 }
+const istBild = s => typeof s === 'string' && s.startsWith('data:image/');
 
-// initialize
-ensureInitialData();
-
-// --- DOM ---
-const nav = document.getElementById('nav');
-const auth = document.getElementById('auth');
-const dashboard = document.getElementById('dashboard');
-const welcome = document.getElementById('welcome');
-const loginForm = document.getElementById('loginForm');
-const registerForm = document.getElementById('registerForm');
-const showRegister = document.getElementById('showRegister');
-const showLogin = document.getElementById('showLogin');
-const registerBox = document.getElementById('registerBox');
-const loginBox = document.getElementById('loginBox');
-const wishlistForm = document.getElementById('wishlistForm');
-const wishlistInput = document.getElementById('wishlistInput');
-const assignedInfo = document.getElementById('assignedInfo');
-const assignedHeader = document.getElementById('assignedHeader');
-const logoutBtn = document.getElementById('logoutBtn');
-const adminArea = document.getElementById('adminArea');
-const usersList = document.getElementById('usersList');
-const pairsView = document.getElementById('pairsView');
-const drawBtn = document.getElementById('drawBtn');
-const exportPairs = document.getElementById('exportPairs');
-const resetPairs = document.getElementById('resetPairs');
-const isAdminCheckbox = document.getElementById('isAdminCheckbox');
-const adminKeyInput = document.getElementById('adminKeyInput');
-const adminKeyLabel = document.getElementById('adminKeyLabel');
-// User management is handled in Firebase Console; remove client-side management UI elements.
-
-showRegister.addEventListener('click', ()=>{ registerBox.classList.remove('hidden'); loginBox.classList.add('hidden'); });
-showLogin.addEventListener('click', ()=>{ registerBox.classList.add('hidden'); loginBox.classList.remove('hidden'); });
-
-// show admin key input only when admin checkbox is checked
-if(isAdminCheckbox){
-  isAdminCheckbox.addEventListener('change', ()=>{
-    if(isAdminCheckbox.checked) adminKeyLabel.classList.remove('hidden'); else adminKeyLabel.classList.add('hidden');
-  });
-}
-
-loginForm.addEventListener('submit', async e=>{
-  e.preventDefault();
-  const f = new FormData(loginForm);
-  const username = f.get('username').trim();
-  const password = f.get('password');
-  state = await loadSharedData();
-  const user = state.users.find(u=>u.username === username && u.pwd === password);
-  if(!user){ alert('Ungültige Anmeldedaten'); return; }
-  session.userId = user.id; render();
-});
-
-registerForm.addEventListener('submit', async e=>{
-  e.preventDefault();
-  const f = new FormData(registerForm);
-  const username = f.get('username').trim();
-  const password = f.get('password');
-  const isAdmin = !!f.get('isAdmin');
-  const adminKey = f.get('adminKey');
-  state = await loadSharedData();
-  // Prevent new registrations after pairs have been drawn to avoid duplicate/overlapping codename assignments
-  if(state.pairs && Object.keys(state.pairs).length > 0){
-    alert('Registrierung deaktiviert: Die Ziehung wurde bereits durchgeführt. Bitte setze die Pairs zurück, um neue Nutzer hinzuzufügen.');
-    return;
-  }
-  if(state.users.find(u=>u.username===username)){ alert('Benutzername bereits vergeben'); return; }
-  // If an organizer secret is configured, require it for admin creation
-  if(isAdmin && window.organizerSecret){
-    if(!adminKey || adminKey !== window.organizerSecret){ alert('Falsches Organisator-Passwort, Admin-Erstellung nicht erlaubt'); return; }
-  }
-  const user = {id: uid(), username, pwd: password, isAdmin, wishlist: ''};
-  state.users.push(user); await saveSharedData(state);
-  // Auto-login the newly registered user so they can immediately edit their wishlist
-  session.userId = user.id;
-  // ensure UI updates to the dashboard
-  render();
-});
-
-logoutBtn.addEventListener('click', ()=>{ session.userId = null; render(); });
-
-wishlistForm.addEventListener('submit', async e=>{
-  e.preventDefault();
-  // Try to persist the wishlist. Prefer the shared (remote) state when possible,
-  // but fall back to the local cache if the remote state doesn't yet include this user
-  // (this can happen when local registration created a user that hasn't been pushed to the shared doc).
-  state = await loadSharedData();
-  let user = state.users.find(u=>u.id === session.userId);
-  if(!user){
-    // remote didn't have the user yet — try local cache
-    const local = loadData();
-    const localUser = (local.users || []).find(u => u.id === session.userId);
-    if(localUser){
-      // merge the local user into the state we'll save
-      state.users = state.users || [];
-      // remove any existing entry with same id to avoid duplicates
-      state.users = state.users.filter(u => u.id !== localUser.id);
-      state.users.push(localUser);
-      user = localUser;
-    }
-  }
-  if(!user){ alert('Benutzer nicht gefunden — bitte melde dich erneut an.'); return; }
-
-  user.wishlist = wishlistInput.value.trim();
-  // Persist; saveSharedData will fall back to localStorage if Firestore write fails
-  await saveSharedData(state);
-  // clear transient draft after successful save
-  try{ delete wishlistDrafts[session.userId]; }catch(e){}
-  // refresh UI to reflect the persisted wishlist immediately
-  try{ render(); }catch(e){/* ignore */}
-  alert('Wunschliste gespeichert');
-});
-
-// keep a transient draft of the wishlist while the user types so re-renders don't erase it
-if(wishlistInput){
-  wishlistInput.addEventListener('input', ()=>{
-    if(session.userId) wishlistDrafts[session.userId] = wishlistInput.value;
-  });
-}
-
-// Credential-change UI removed; user management is done through Firebase Console.
-
-if(drawBtn){
-  drawBtn.addEventListener('click', async ()=>{
-    state = await loadSharedData();
-    if(state.users.length < 2){ alert('Mindestens 2 Nutzer nötig'); return; }
-      // Ensure we have enough unique codenames to assign one per user
-      if(state.users.length > CODENAMES.length){
-        alert('Es sind nicht genug eindeutige Codenamen definiert, um jedem Nutzer einen einmaligen Codename zu geben. Bitte erweitere die CODENAMES-Liste in app.js.');
-        return;
-      }
-
-      // Preserve existing codenames and only assign missing ones.
-      state.codenames = state.codenames || {};
-
-      // Ensure admin user exists and has the reserved codename
-      let adminUser = state.users.find(u => u.username === ADMIN_USERNAME);
-      if(adminUser){
-        // Remove ADMIN_CODENAME from others if present
-        Object.keys(state.codenames).forEach(k => {
-          if(state.codenames[k] === ADMIN_CODENAME && k !== adminUser.id) delete state.codenames[k];
-        });
-        // Assign to admin
-        state.codenames[adminUser.id] = ADMIN_CODENAME;
-      }
-
-      // Build list of users who still need a codename
-      const needCode = state.users.filter(u => !state.codenames[u.id]);
-
-      // Available codes are those not yet assigned
-      const assigned = new Set(Object.values(state.codenames || {}));
-      const availableCodes = CODENAMES.filter(c => !assigned.has(c));
-      if(availableCodes.length < needCode.length){
-        alert('Nicht genügend unbenutzte Codenamen verfügbar. Bitte erweitere die CODENAMES-Liste.');
-        return;
-      }
-
-      // Shuffle available codes and assign to users who need one
-      const shuffledAvail = shuffle(availableCodes).slice(0, needCode.length);
-      for(let i=0;i<needCode.length;i++){
-        state.codenames[needCode[i].id] = shuffledAvail[i];
-      }
-
-    // Now create a Sattolo cycle for gifting (ensures a single cycle permutation)
-    const ids = state.users.map(u=>u.id);
-    const cycle = sattolo(ids.slice());
-    const pairs = {};
-    for(let i=0;i<cycle.length;i++) pairs[cycle[i]] = cycle[(i+1)%cycle.length];
-    state.pairs = pairs;
-    // mark when pairs were last updated so clients can resolve sync conflicts deterministically
-    state.meta = state.meta || {};
-    state.meta.pairsUpdatedAt = Date.now();
-    await saveSharedData(state);
-    render();
-  });
-}
-
-if(exportPairs){
-  exportPairs.addEventListener('click', async ()=>{
-    state = await loadSharedData();
-    const dataStr = JSON.stringify({users: state.users, pairs: state.pairs}, null, 2);
-    downloadText('wichteln_pairs.json', dataStr);
-  });
-}
-
-if(resetPairs){
-  resetPairs.addEventListener('click', async ()=>{ 
-    if(!confirm('Pairs wirklich zurücksetzen?')) return;
-    state = await loadSharedData();
-    state.pairs = {};
-    state.meta = state.meta || {};
-    state.meta.pairsUpdatedAt = Date.now();
-    await saveSharedData(state);
-    render(); 
-  });
-}
-
-// User management (delete/reset) removed — manage users via Firebase Console directly.
-
-function downloadText(filename, text){
-  const blob = new Blob([text], {type: 'application/json'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url);
-}
-
-function sattolo(array){
-  // in-place
-  let i = array.length;
-  while(i>1){
-    i--;
-    const j = Math.floor(Math.random() * i);
-    const tmp = array[j]; array[j] = array[i]; array[i] = tmp;
-  }
-  return array;
-}
-
-function shuffle(array){
-  // returns a new shuffled copy (Fisher-Yates)
-  const a = array.slice();
-  for(let i = a.length - 1; i > 0; i--){
+function mischen(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    const tmp = a[i]; a[i] = a[j]; a[j] = tmp;
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+function sattolo(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * i);
+    [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
 }
 
-// Simple deterministic obfuscation for ids using a salted djb2 hash -> base36
-// List of christmassy codenames (at least 10)
-const CODENAMES = [
-  'Claus 🎅', 'Rudolph 🦌', 'MrsSanta 🎀', 'Mistletoe 🌿', 'Krampus 👹', 'Frosty ⛄', 'Holly 🌿', 'Jingle 🔔', 'Tinsel 🎗️', 'Sleigh 🛷', 'Donner ⚡', 'Blitzen ✨',
-  'CandyCane 🍭', 'Eggnog 🥛', 'YuleBeary 🐻', 'SparkleElf ✨', 'GingerSnap 🍪', 'SleighCat 🐱', 'Snowflake ❄️', 'MerryMittens 🧤', 'Pudding 🍮', 'TwinkleToes ⭐️'
-];
-
-// Deterministic codename mapping using salted djb2 -> index into CODENAMES
-function codenameForId(id){
-  // Prefer an explicitly assigned codename persisted in state.codenames
-  try{
-    if(state && state.codenames && state.codenames[id]) return state.codenames[id];
-  }catch(e){ /* ignore; fall back to deterministic mapping */ }
-  // Fallback deterministic obfuscation using salted djb2 -> index into CODENAMES
-  const salt = (window.organizerSecret || '');
-  const s = id + '::' + salt;
-  let h = 5381;
-  for(let i=0;i<s.length;i++) h = ((h<<5) + h) + s.charCodeAt(i);
-  h = Math.abs(h);
-  const idx = h % CODENAMES.length;
-  return CODENAMES[idx];
+function neuesPasswort() {
+  const w = mischen(PASSWORT_WOERTER);
+  return `${w[0]}-${w[1]}-${10 + Math.floor(Math.random() * 90)}`;
 }
 
-// Robust renderer helper: always return a printable codename for an id.
-// Prefer persisted mapping, then deterministic fallback, then ADMIN_CODENAME for admin id.
-function displayCodename(id){
-  try{
-    if(state && state.codenames && state.codenames[id]) return state.codenames[id];
-  }catch(e){}
-  // if id belongs to an admin user, prefer ADMIN_CODENAME
-  try{
-    const u = (state && state.users) ? state.users.find(x => x.id === id) : null;
-    if(u && u.username === ADMIN_USERNAME) return ADMIN_CODENAME;
-  }catch(e){}
-  // fallback to deterministic mapping
-  const c = codenameForId(id);
-  if(c) return c;
-  // last resort: render a short placeholder (avoid showing raw id)
-  return 'Unbekannt';
+function codenameInfo(name) {
+  return CODENAMEN.concat(CODENAMEN_RESERVE).find(c => c.name === name) || { name: name || '', icon: '' };
+}
+function codenameElement(name) {
+  const info = codenameInfo(name);
+  const span = el('span', {}, info.name);
+  if (info.icon) span.append(el('img', { src: info.icon, alt: '', class: 'codename-icon' }));
+  return span;
 }
 
-function render(){
-  // Start from the local copy so UI is responsive, then try to sync with Firestore
-  const localState = loadData();
-  state = localState;
+function wunschlisteTitel(person) {
+  if (!person) return 'Wunschliste';
+  if (person.anrede === 'seine') return 'Seine Wunschliste';
+  if (person.anrede === 'name') return `Wunschliste von ${person.name}`;
+  return 'Ihre Wunschliste';
+}
 
-  // If Firestore is enabled, fetch remote state and replace local if different
-  if(useFirestore){
-    loadSharedData().then(remote => {
-      try{
-            // Determine whether to preserve local pairs while the current user is editing
-            const preservePairs = (session && session.userId && wishlistDrafts[session.userId] &&
-              wishlistDrafts[session.userId] !== (localState.users.find(u=>u.id===session.userId)||{}).wishlist);
-            // Merge remote into local, preserving any in-progress local drafts and optionally pairs.
-            const merged = mergeSharedState(localState, remote || {users:[], pairs:{}, codenames:{}}, { preservePairsIfEditing: preservePairs, currentUserId: session.userId });
-            if(JSON.stringify(merged) !== JSON.stringify(localState)){
-              state = merged;
-              // update local cache with merged authoritative data
-              saveDataLocal(state);
-              // re-render once with the merged data
-              render();
-            }
-      }catch(e){ console.warn('render: sync compare failed', e); }
-    }).catch(e=>{ console.warn('render: loadSharedData failed', e); });
+const zeit = w => (w.erstellt && w.erstellt.toMillis) ? w.erstellt.toMillis() : Number.MAX_SAFE_INTEGER;
+
+/* ---------- Schnee ---------- */
+
+(function schneeErzeugen() {
+  const links = [[4,14,11,-1,2.4,.9],[18,9,14,-6,3.1,.6],[8,18,9,-3.5,2.8,.95],[22,11,13,-9,2.2,.7],[2,8,16,-12,3.4,.5],[14,15,12,-4.5,2.6,.85],[10,10,15,-10.5,3,.6]];
+  const rechts = [[4,13,10,-2,2.5,.9],[20,9,15,-7,3.2,.55],[10,17,12,-5,2.7,.95],[24,10,13,-11,2.3,.7],[2,8,17,-14,3.5,.5],[16,14,11,-8,2.9,.85],[6,11,14,-.5,2.4,.65]];
+  const box = $('schnee');
+  const mach = (a, seite) => {
+    const f = el('div', { class: 'flocke' }, el('span', { svg: ICON.flocke }));
+    Object.assign(f.style, { [seite]: a[0] + 'px', width: a[1] + 'px', height: a[1] + 'px', animationDuration: a[2] + 's', animationDelay: a[3] + 's', opacity: a[5] });
+    Object.assign(f.firstChild.style, { animationDuration: a[4] + 's', animationDelay: (a[3] / 3) + 's' });
+    box.append(f);
+  };
+  links.forEach(a => mach(a, 'left'));
+  rechts.forEach(a => mach(a, 'right'));
+})();
+
+/* ---------- Firebase ---------- */
+
+if (!window.firebaseConfig) {
+  $('ansichtLaden').querySelector('p').textContent = 'firebase-config.js fehlt oder ist leer.';
+  throw new Error('firebaseConfig fehlt');
+}
+firebase.initializeApp(window.firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+const FV = firebase.firestore.FieldValue;
+
+// Zweite App-Instanz, damit das Anlegen eines Kontos die Organisatorin nicht abmeldet.
+let sekundaerApp = null;
+function sekundaerAuth() {
+  if (!sekundaerApp) sekundaerApp = firebase.initializeApp(window.firebaseConfig, 'sekundaer');
+  return sekundaerApp.auth();
+}
+
+/* ---------- Zustand ---------- */
+
+const S = {
+  user: null,
+  istAdmin: false,
+  personen: {},          // uid -> {name, anrede, login}
+  einstellungen: { datum: '', budget: '', gezogen: false, ausnahmen: [] },
+  zuteilung: null,       // {empfaenger, codename, schenkerCodename}
+  meineWuensche: [],
+  empfaengerWuensche: [],
+  empfaengerId: null,
+  sterne: new Set(),
+  alleWuensche: [],      // nur für die Organisation (Zählen)
+  ansicht: 'start'
+};
+let abmelder = [];
+let empfaengerAbmelder = null;
+
+function listenerStoppen() {
+  abmelder.forEach(f => f());
+  abmelder = [];
+  if (empfaengerAbmelder) { empfaengerAbmelder(); empfaengerAbmelder = null; }
+  S.empfaengerId = null;
+}
+
+function zeige(ansicht) {
+  ['Laden', 'Login', 'Start', 'Orga'].forEach(n => { $('ansicht' + n).hidden = (n !== ansicht); });
+  window.scrollTo(0, 0);
+}
+
+/* ---------- Anmeldung ---------- */
+
+auth.onAuthStateChanged(async u => {
+  listenerStoppen();
+  S.user = u;
+  if (!u) { zeige('Login'); return; }
+  S.istAdmin = (u.email === ADMIN_EMAIL);
+  zeige('Laden');
+  if (S.istAdmin) {
+    try { await adminEinrichten(); } catch (e) { console.warn('Einrichtung fehlgeschlagen', e); }
   }
-  // nav
-  nav.innerHTML = '';
-  const l = document.createElement('div');
-  l.textContent = `Nutzer: ${state.users.length}`;
-  nav.appendChild(l);
+  listenerStarten();
+  S.ansicht = 'start';
+  zeige('Start');
+});
 
-  if(!session.userId){ auth.classList.remove('hidden'); dashboard.classList.add('hidden'); return; }
+$('loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const name = $('loginName').value;
+  const pw = $('loginPw').value;
+  zeigeMeldung($('loginFehler'), '');
+  const knopf = e.submitter; if (knopf) knopf.disabled = true;
+  try {
+    await auth.signInWithEmailAndPassword(emailFuer(name), pw);
+    $('loginPw').value = '';
+  } catch (err) {
+    zeigeMeldung($('loginFehler'), err.code === 'auth/too-many-requests'
+      ? 'Zu viele Versuche. Bitte warte kurz.'
+      : 'Name oder Passwort stimmt nicht.');
+  } finally { if (knopf) knopf.disabled = false; }
+});
 
-  auth.classList.add('hidden'); dashboard.classList.remove('hidden');
-  const me = state.users.find(u=>u.id === session.userId);
-  // Use robust display helper so admin always sees their reserved codename and we avoid raw ids.
-  const myCode = displayCodename(me.id);
-  // Show username with codename in the welcome line (admins should also see their codename)
-  welcome.textContent = `Willkommen, ${me.username} (${myCode})`;
-  // Avoid overwriting the textarea while the user is actively typing.
-  try{
-    if(document.activeElement !== wishlistInput){
-      // prefer an in-progress draft if present; fall back to saved wishlist
-      const draft = wishlistDrafts[me.id];
-      if(typeof draft !== 'undefined' && draft !== null){
-        wishlistInput.value = draft;
-      } else {
-        wishlistInput.value = me.wishlist || '';
+$('abmelden').addEventListener('click', () => auth.signOut());
+$('zurOrga').addEventListener('click', () => { S.ansicht = 'orga'; renderOrga(); zeige('Orga'); });
+$('zurStart').addEventListener('click', () => { S.ansicht = 'start'; zeige('Start'); });
+
+// Beim ersten Login der Organisatorin: eigenes Profil und Einstellungen anlegen, alte Daten löschen.
+async function adminEinrichten() {
+  const uid = S.user.uid;
+  const ich = await db.collection('personen').doc(uid).get();
+  if (!ich.exists) {
+    await db.collection('personen').doc(uid).set({ name: ADMIN_NAME, anrede: 'ihre', login: loginName(ADMIN_NAME), erstellt: FV.serverTimestamp() });
+  }
+  const einst = await db.collection('einstellungen').doc('allgemein').get();
+  if (!einst.exists) {
+    await db.collection('einstellungen').doc('allgemein').set({ datum: '', budget: '', gezogen: false, ausnahmen: [] });
+  }
+  // Alte Version (alles in einem Dokument, Passwörter im Klartext) entfernen.
+  try { await db.collection('shared').doc('wichteln').delete(); } catch (e) { /* schon weg */ }
+}
+
+/* ---------- Live-Daten ---------- */
+
+function listenerStarten() {
+  const uid = S.user.uid;
+  const warn = name => err => console.warn('Listener ' + name, err);
+
+  abmelder.push(db.collection('personen').onSnapshot(snap => {
+    S.personen = {};
+    snap.forEach(d => { S.personen[d.id] = d.data(); });
+    allesRendern();
+  }, warn('personen')));
+
+  abmelder.push(db.collection('einstellungen').doc('allgemein').onSnapshot(d => {
+    S.einstellungen = Object.assign({ datum: '', budget: '', gezogen: false, ausnahmen: [] }, d.exists ? d.data() : {});
+    allesRendern();
+  }, warn('einstellungen')));
+
+  abmelder.push(db.collection('zuteilung').doc(uid).onSnapshot(d => {
+    S.zuteilung = d.exists ? d.data() : null;
+    empfaengerBeobachten();
+    allesRendern();
+  }, warn('zuteilung')));
+
+  abmelder.push(db.collection('wuensche').where('owner', '==', uid).onSnapshot(snap => {
+    S.meineWuensche = snap.docs.map(d => Object.assign({ id: d.id }, d.data())).sort((a, b) => zeit(a) - zeit(b));
+    renderMeineListe();
+  }, warn('meine wuensche')));
+
+  abmelder.push(db.collection('privat').doc(uid).onSnapshot(d => {
+    S.sterne = new Set(d.exists && Array.isArray(d.data().sterne) ? d.data().sterne : []);
+    renderEmpfaengerListe();
+  }, warn('privat')));
+
+  if (S.istAdmin) {
+    abmelder.push(db.collection('wuensche').onSnapshot(snap => {
+      S.alleWuensche = snap.docs.map(d => ({ id: d.id, owner: d.data().owner }));
+      if (S.ansicht === 'orga') renderOrga();
+    }, warn('alle wuensche')));
+  }
+}
+
+function empfaengerBeobachten() {
+  const neu = S.zuteilung ? S.zuteilung.empfaenger : null;
+  if (neu === S.empfaengerId) return;
+  if (empfaengerAbmelder) { empfaengerAbmelder(); empfaengerAbmelder = null; }
+  S.empfaengerId = neu;
+  S.empfaengerWuensche = [];
+  if (!neu) { renderEmpfaengerListe(); return; }
+  empfaengerAbmelder = db.collection('wuensche').where('owner', '==', neu).onSnapshot(snap => {
+    S.empfaengerWuensche = snap.docs.map(d => Object.assign({ id: d.id }, d.data())).sort((a, b) => zeit(a) - zeit(b));
+    renderEmpfaengerListe();
+  }, err => console.warn('Listener empfaenger', err));
+}
+
+/* ---------- Startseite ---------- */
+
+function allesRendern() {
+  renderStart();
+  if (S.istAdmin && S.ansicht === 'orga') renderOrga();
+}
+
+function renderStart() {
+  const ich = S.personen[S.user.uid];
+  $('begruessung').textContent = `Hallo ${ich ? ich.name : ''}!`.replace(' !', '!');
+  $('zurOrga').hidden = !S.istAdmin;
+
+  const mc = $('meinCodename');
+  if (S.zuteilung && S.zuteilung.codename) {
+    mc.replaceChildren('Dein geheimer Codename ist ', el('strong', {}, codenameElement(S.zuteilung.codename)), '.');
+    mc.hidden = false;
+  } else mc.hidden = true;
+
+  $('anzeigeDatum').textContent = datumAnzeigen(S.einstellungen.datum);
+  $('anzeigeBudget').textContent = S.einstellungen.budget || '–';
+
+  const gezogen = !!(S.einstellungen.gezogen && S.zuteilung);
+  $('nochNichtGezogen').hidden = gezogen;
+  $('duBeschenkst').hidden = !gezogen;
+  $('dichBeschenkt').hidden = !gezogen;
+
+  const hinweis = $('nochNichtGezogen');
+  if (S.einstellungen.gezogen && !S.zuteilung) {
+    hinweis.querySelector('h2').textContent = 'Du bist noch nicht ausgelost';
+    hinweis.querySelector('p').textContent = 'Die Ziehung lief schon, bevor dein Konto da war. Sag Toni Bescheid.';
+  } else {
+    hinweis.querySelector('h2').textContent = 'Die Ziehung kommt bald';
+    hinweis.querySelector('p').textContent = 'Sobald gelost wurde, siehst du hier, wen du beschenkst. Deine Wunschliste kannst du schon jetzt schreiben.';
+  }
+
+  if (gezogen) {
+    const empf = S.personen[S.zuteilung.empfaenger];
+    $('empfaengerName').textContent = empf ? empf.name : 'Unbekannt';
+    $('empfaengerListeTitel').textContent = wunschlisteTitel(empf);
+    $('schenkerCodename').replaceChildren(codenameElement(S.zuteilung.schenkerCodename));
+    $('meineListeHinweis').replaceChildren(codenameElement(S.zuteilung.schenkerCodename), ' sieht diese Liste.');
+  } else {
+    $('meineListeHinweis').textContent = 'Deine Wichtelperson sieht diese Liste.';
+  }
+}
+
+function bildKnopf(w) {
+  if (!istBild(w.bild)) return null;
+  return el('button', { type: 'button', class: 'vorschau', 'aria-label': 'Bild vergrößern', onclick: () => bildZeigen(w) },
+    el('img', { src: w.bild, alt: '' }));
+}
+
+function renderEmpfaengerListe() {
+  const ul = $('empfaengerListe');
+  ul.replaceChildren(...S.empfaengerWuensche.map(w => {
+    const gemerkt = S.sterne.has(w.id);
+    const link = sichererLink(w.link);
+    return el('li', { class: 'wunsch' },
+      el('button', { type: 'button', class: 'icon-knopf stern', 'aria-pressed': String(gemerkt), 'aria-label': 'Für mich merken', svg: ICON.stern, onclick: () => sternUmschalten(w.id, !gemerkt) }),
+      el('span', { class: 'wunsch-text', text: w.text }),
+      link ? el('a', { class: 'link', href: link, target: '_blank', rel: 'noopener noreferrer' }, 'Link', el('span', { svg: ICON.extern })) : null,
+      bildKnopf(w)
+    );
+  }));
+  $('empfaengerLeer').hidden = S.empfaengerWuensche.length > 0;
+}
+
+function renderMeineListe() {
+  const ul = $('meineListe');
+  ul.replaceChildren(...S.meineWuensche.map(w => {
+    const link = sichererLink(w.link);
+    return el('li', { class: 'wunsch eigen' },
+      bildKnopf(w),
+      el('div', { class: 'wunsch-text' },
+        el('div', { text: w.text }),
+        link ? el('a', { class: 'wunsch-unter', href: link, target: '_blank', rel: 'noopener noreferrer' }, 'Link öffnen') : null),
+      el('button', { type: 'button', class: 'icon-knopf', 'aria-label': 'Wunsch bearbeiten', svg: ICON.stift, onclick: () => wunschBearbeiten(w) }),
+      el('button', { type: 'button', class: 'icon-knopf', 'aria-label': 'Wunsch löschen', svg: ICON.kreuz, onclick: () => wunschLoeschen(w) })
+    );
+  }));
+  $('meineListeLeer').hidden = S.meineWuensche.length > 0;
+}
+
+async function sternUmschalten(id, an) {
+  try {
+    await db.collection('privat').doc(S.user.uid).set({ sterne: an ? FV.arrayUnion(id) : FV.arrayRemove(id) }, { merge: true });
+  } catch (e) { console.warn(e); }
+}
+
+function bildZeigen(w) {
+  $('bildGross').src = w.bild;
+  $('bildGross').alt = w.text;
+  $('bildTitel').textContent = w.text;
+  $('bildDialog').showModal();
+}
+$('bildDialog').addEventListener('click', e => { if (e.target === $('bildDialog')) $('bildDialog').close(); });
+
+/* ---------- Wunsch-Formular ---------- */
+
+let bearbeiteId = null;
+let bildDaten = null;
+
+function bildAnzeigen() {
+  $('bildWaehlen').hidden = !!bildDaten;
+  $('bildGewaehlt').hidden = !bildDaten;
+  if (bildDaten) $('bildVorschau').src = bildDaten;
+}
+
+function formularLeeren() {
+  bearbeiteId = null;
+  bildDaten = null;
+  $('wunschForm').reset();
+  $('wunschFormTitel').textContent = 'Neuer Wunsch';
+  $('wunschSpeichern').textContent = 'Hinzufügen';
+  $('wunschAbbrechen').hidden = true;
+  zeigeMeldung($('wunschFehler'), '');
+  bildAnzeigen();
+}
+
+function wunschBearbeiten(w) {
+  bearbeiteId = w.id;
+  bildDaten = istBild(w.bild) ? w.bild : null;
+  $('wunschText').value = w.text || '';
+  $('wunschLink').value = w.link || '';
+  $('wunschFormTitel').textContent = 'Wunsch bearbeiten';
+  $('wunschSpeichern').textContent = 'Speichern';
+  $('wunschAbbrechen').hidden = false;
+  bildAnzeigen();
+  $('wunschForm').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  $('wunschText').focus({ preventScroll: true });
+}
+
+async function wunschLoeschen(w) {
+  if (!confirm(`„${w.text}“ löschen?`)) return;
+  try {
+    await db.collection('wuensche').doc(w.id).delete();
+    if (bearbeiteId === w.id) formularLeeren();
+  } catch (e) { alert('Löschen hat nicht geklappt.'); }
+}
+
+$('wunschAbbrechen').addEventListener('click', formularLeeren);
+$('bildEntfernen').addEventListener('click', () => { bildDaten = null; $('wunschBild').value = ''; bildAnzeigen(); });
+
+$('wunschBild').addEventListener('change', async () => {
+  const datei = $('wunschBild').files[0];
+  if (!datei) return;
+  zeigeMeldung($('wunschFehler'), '');
+  try {
+    bildDaten = await bildVerkleinern(datei);
+    bildAnzeigen();
+  } catch (e) {
+    zeigeMeldung($('wunschFehler'), 'Dieses Bild konnte nicht geladen werden. Probier ein anderes.');
+  }
+});
+
+// Verkleinert ein Bild auf höchstens ~700 KB, damit es in ein Firestore-Dokument passt.
+function bildVerkleinern(datei) {
+  return new Promise((ok, fehler) => {
+    const url = URL.createObjectURL(datei);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let max = 1200, qualitaet = 0.82;
+      for (let versuch = 0; versuch < 8; versuch++) {
+        const faktor = Math.min(1, max / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.width * faktor);
+        c.height = Math.round(img.height * faktor);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        const daten = c.toDataURL('image/jpeg', qualitaet);
+        if (daten.length < 700000) { ok(daten); return; }
+        max *= 0.8; qualitaet = Math.max(0.5, qualitaet - 0.08);
       }
-    }
-  }catch(e){ wishlistInput.value = me.wishlist || ''; }
-
-  // assigned: who you gift (receiver) and who gives you (giver)
-  if(state.pairs){
-    // receiver: whom I should gift
-    if(state.pairs[me.id]){
-      const assignedId = state.pairs[me.id];
-      const assignedUser = state.users.find(u=>u.id === assignedId);
-      // Show only the username (no codename) when displaying who you gift
-      const displayName = assignedUser.username;
-      if(assignedHeader) assignedHeader.textContent = `Person, die du beschenkst: ${displayName}`;
-      // render only the wishlist here (we moved the label into the header to avoid duplication)
-      assignedInfo.innerHTML = `<div class="assigned-wishlist"><pre>${(assignedUser.wishlist||'(keine)')}</pre></div>`;
-    } else {
-      if(assignedHeader) assignedHeader.textContent = 'Person, die du beschenkst';
-      assignedInfo.innerHTML = 'Du beschenkst im Moment niemanden.';
-    }
-
-    // giver: who gives me a present
-    const giverId = Object.keys(state.pairs || {}).find(g => state.pairs[g] === me.id);
-    if(giverId){
-  const giverUser = state.users.find(u=>u.id === giverId);
-  const giverCode = displayCodename(giverUser.id);
-      assignedInfo.innerHTML += `<div class="giver" style="margin-top:8px"><strong>Du bekommst dein Geschenk von:</strong> ${giverCode}</div>`;
-    } else {
-      assignedInfo.innerHTML += `<div style="margin-top:8px"><em>Wer dir schenkt ist noch nicht gezogen.</em></div>`;
-    }
-  } else {
-    assignedInfo.textContent = 'Noch keine Zuordnung vorhanden.';
-  }
-
-  // admin
-  adminArea.classList.toggle('hidden', !me.isAdmin);
-  if(usersList){
-    usersList.innerHTML = '';
-    state.users.forEach(u=>{
-      const li = document.createElement('li');
-      // Admins requested: list should show usernames only (no codenames)
-      li.innerHTML = `${u.username} ${u.isAdmin?'<em>admin</em>':''}`;
-      usersList.appendChild(li);
-    });
-  }
-
-  // For admins: show pairs as codenames so names are not plainly visible, but patterns can be checked
-  if(me.isAdmin){
-    const pairs = state.pairs || {};
-    const pairsTs = (state.meta && state.meta.pairsUpdatedAt) ? state.meta.pairsUpdatedAt : 0;
-    // Only update the pairs view when the authoritative pairs timestamp changed.
-    // Build the text for the pairs view (codename mapping)
-    const lines = [];
-    const codeMap = {};
-    state.users.forEach(u => codeMap[u.id] = displayCodename(u.id));
-    // Iterate giver ids in a stable, sorted order to avoid view jitter caused by
-    // non-deterministic object key ordering between syncs.
-    const giverIds = Object.keys(pairs || {}).slice().sort();
-    for(const giverId of giverIds){
-      const recvId = pairs[giverId];
-      lines.push(`${codeMap[giverId]} -> ${codeMap[recvId]}`);
-    }
-    // also show counts to detect duplicates
-    const counts = {};
-  Object.values(pairs).forEach(id => { const c = codeMap[id] || displayCodename(id); counts[c] = (counts[c]||0)+1; });
-  lines.push('\nAnzahl:');
-  // Output counts in a stable, alphabetical order to avoid reordering between renders
-  Object.keys(counts).slice().sort().forEach(k => lines.push(`${k}: ${counts[k]}`));
-    const newText = lines.join('\n');
-    // Update the admin pairs view when either the authoritative pairs timestamp changed
-    // or the rendered text would be different (e.g. codenames updated).
-    if(pairsTs !== lastPairsRenderedAt || pairsView.textContent !== newText){
-      pairsView.textContent = newText;
-      lastPairsRenderedAt = pairsTs;
-    }
-  } else {
-    pairsView.textContent = Object.keys(state.pairs || {}).length ? JSON.stringify(state.pairs, null, 2) : '(keine)';
-  }
+      fehler(new Error('zu groß'));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); fehler(new Error('kein Bild')); };
+    img.src = url;
+  });
 }
 
-render();
+$('wunschForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const text = $('wunschText').value.trim();
+  const linkRoh = $('wunschLink').value.trim();
+  const link = sichererLink(linkRoh);
+  zeigeMeldung($('wunschFehler'), '');
+  if (!text) return;
+  if (linkRoh && !link) { zeigeMeldung($('wunschFehler'), 'Der Link sieht nicht richtig aus.'); return; }
+  const knopf = $('wunschSpeichern');
+  knopf.disabled = true;
+  try {
+    const daten = { text, link, bild: bildDaten || null };
+    if (bearbeiteId) {
+      await db.collection('wuensche').doc(bearbeiteId).update(daten);
+    } else {
+      await db.collection('wuensche').add(Object.assign({ owner: S.user.uid, erstellt: FV.serverTimestamp() }, daten));
+    }
+    formularLeeren();
+  } catch (err) {
+    console.warn(err);
+    zeigeMeldung($('wunschFehler'), 'Speichern hat nicht geklappt. Ist das Bild vielleicht zu groß?');
+  } finally { knopf.disabled = false; }
+});
 
-// Demo helper removed: do not auto-login the first user anymore.
-// Users must sign in explicitly via the login form.
-// If you need a dev helper to auto-login, run a console snippet manually.
+/* ---------- Organisation ---------- */
+
+let bearbeitePerson = null;
+
+function personenSortiert() {
+  return Object.entries(S.personen)
+    .map(([id, p]) => Object.assign({ id }, p))
+    .sort((a, b) => a.name.localeCompare(b.name, 'de'));
+}
+
+function renderOrga() {
+  if (!S.istAdmin) return;
+  const liste = personenSortiert();
+  const anzahl = {};
+  S.alleWuensche.forEach(w => { anzahl[w.owner] = (anzahl[w.owner] || 0) + 1; });
+  const fertig = liste.filter(p => anzahl[p.id]).length;
+
+  $('anzahlKonten').textContent = `${liste.length} ${liste.length === 1 ? 'Konto' : 'Konten'}`;
+  $('wunschStatus').textContent = `Wunschlisten: ${fertig} von ${liste.length} ausgefüllt`;
+  $('wunschBalken').style.width = liste.length ? `${Math.round(fertig / liste.length * 100)}%` : '0';
+
+  $('personenListe').replaceChildren(...liste.map(p => {
+    const n = anzahl[p.id] || 0;
+    const istIch = p.id === S.user.uid;
+    return el('li', { class: 'person' },
+      el('div', { class: 'person-info' },
+        el('div', { class: 'person-name', text: p.name }),
+        el('div', { class: 'person-status' + (n ? '' : ' leer'), text: n ? `${n} ${n === 1 ? 'Wunsch' : 'Wünsche'}` : 'Wunschliste noch leer' }),
+        el('div', { class: 'person-login', text: `Anmeldename: ${p.name}` })),
+      el('button', { type: 'button', class: 'icon-knopf', 'aria-label': `${p.name} bearbeiten`, svg: ICON.stift, onclick: () => personBearbeiten(p) }),
+      istIch ? null : el('button', { type: 'button', class: 'icon-knopf', 'aria-label': `${p.name} löschen`, svg: ICON.kreuz, onclick: () => personLoeschen(p) })
+    );
+  }));
+
+  // Ausnahmen
+  const ausn = Array.isArray(S.einstellungen.ausnahmen) ? S.einstellungen.ausnahmen : [];
+  const nameVon = id => (S.personen[id] ? S.personen[id].name : '?');
+  $('ausnahmenListe').replaceChildren(...ausn.map((a, i) =>
+    el('span', { class: 'chip' }, `${nameVon(a.a)} & ${nameVon(a.b)}`,
+      el('button', { type: 'button', class: 'icon-knopf', 'aria-label': 'Ausnahme entfernen', svg: ICON.kreuz, onclick: () => ausnahmeEntfernen(i) }))));
+  ['ausnahmeA', 'ausnahmeB'].forEach(id => {
+    const sel = $(id); const alt = sel.value;
+    sel.replaceChildren(...liste.map(p => el('option', { value: p.id, text: p.name })));
+    if (alt && S.personen[alt]) sel.value = alt;
+  });
+
+  // Rahmen (nicht überschreiben, während getippt wird)
+  if (!$('rahmenForm').contains(document.activeElement)) {
+    $('rahmenDatum').value = S.einstellungen.datum || '';
+    $('rahmenBudget').value = S.einstellungen.budget || '';
+  }
+
+  // Ziehung
+  const gezogen = !!S.einstellungen.gezogen;
+  $('ziehungStatus').textContent = gezogen
+    ? `Die Ziehung ist gelaufen (${S.einstellungen.anzahl || liste.length} Personen). Wunschlisten bleiben offen. Auch du siehst nicht, wer wen gezogen hat.`
+    : 'Wunschlisten bleiben nach der Ziehung offen. Auch du siehst nicht, wer wen gezogen hat.';
+  $('auslosen').hidden = gezogen;
+  $('ziehungZuruecksetzen').hidden = !gezogen;
+}
+
+function kontoFormLeeren() {
+  bearbeitePerson = null;
+  $('kontoForm').reset();
+  $('kontoName').disabled = false;
+  $('kontoFormTitel').textContent = 'Konto anlegen';
+  $('kontoSpeichern').textContent = 'Konto anlegen';
+  $('kontoPwFeld').hidden = false;
+  $('kontoPw').required = true;
+  $('kontoPw').value = neuesPasswort();
+  $('kontoAbbrechen').hidden = true;
+  zeigeMeldung($('kontoFehler'), '');
+}
+
+function personBearbeiten(p) {
+  bearbeitePerson = p;
+  $('kontoName').value = p.name;
+  $('kontoName').disabled = true; // der Name ist zugleich der Anmeldename
+  $('kontoAnrede').value = p.anrede || 'ihre';
+  $('kontoFormTitel').textContent = `${p.name} bearbeiten`;
+  $('kontoSpeichern').textContent = 'Speichern';
+  $('kontoPwFeld').hidden = true;
+  $('kontoPw').required = false;
+  $('kontoAbbrechen').hidden = false;
+  zeigeMeldung($('kontoFehler'), '');
+  zeigeMeldung($('kontoErfolg'), '');
+  $('kontoForm').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+$('pwWuerfeln').addEventListener('click', () => { $('kontoPw').value = neuesPasswort(); });
+$('kontoAbbrechen').addEventListener('click', kontoFormLeeren);
+
+$('kontoForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const name = $('kontoName').value.trim().replace(/\s+/g, ' ');
+  const anrede = $('kontoAnrede').value;
+  const pw = $('kontoPw').value.trim();
+  zeigeMeldung($('kontoFehler'), '');
+  zeigeMeldung($('kontoErfolg'), '');
+  if (!name || !loginName(name)) { zeigeMeldung($('kontoFehler'), 'Bitte einen Namen eingeben.'); return; }
+  const knopf = $('kontoSpeichern');
+  knopf.disabled = true;
+  try {
+    if (bearbeitePerson) {
+      // Der Anmeldename bleibt der ursprüngliche; nur Anzeige und Anrede ändern sich.
+      await db.collection('personen').doc(bearbeitePerson.id).update({ anrede });
+      const altName = bearbeitePerson.name;
+      kontoFormLeeren();
+      zeigeMeldung($('kontoErfolg'), `${altName} gespeichert.`);
+      return;
+    }
+    const login = loginName(name);
+    if (Object.values(S.personen).some(p => p.login === login)) {
+      zeigeMeldung($('kontoFehler'), 'Diesen Namen gibt es schon.');
+      return;
+    }
+    if (pw.length < 6) { zeigeMeldung($('kontoFehler'), 'Das Passwort braucht mindestens 6 Zeichen.'); return; }
+    const sa = sekundaerAuth();
+    const cred = await sa.createUserWithEmailAndPassword(emailFuer(name), pw);
+    await db.collection('personen').doc(cred.user.uid).set({ name, anrede, login, erstellt: FV.serverTimestamp() });
+    await sa.signOut();
+    kontoFormLeeren();
+    let text = `Konto angelegt. Name: ${name} · Passwort: ${pw}`;
+    if (S.einstellungen.gezogen) text += ' – Die Ziehung lief schon: Setze sie zurück und lose neu, damit die Person dabei ist.';
+    zeigeMeldung($('kontoErfolg'), text);
+  } catch (err) {
+    console.warn(err);
+    const meldung = {
+      'auth/email-already-in-use': 'Für diesen Namen gibt es schon ein Login (evtl. von einem gelöschten Konto). Entferne es in der Firebase-Konsole unter Authentication.',
+      'auth/weak-password': 'Das Passwort ist zu schwach.',
+      'auth/operation-not-allowed': 'In Firebase ist die Anmeldung mit E-Mail/Passwort noch nicht aktiviert.'
+    }[err.code] || 'Das hat nicht geklappt. Versuch es nochmal.';
+    zeigeMeldung($('kontoFehler'), meldung);
+  } finally { knopf.disabled = false; }
+});
+
+async function personLoeschen(p) {
+  if (!confirm(`${p.name} wirklich löschen? Die Wunschliste wird mitgelöscht.`)) return;
+  try {
+    const batch = db.batch();
+    batch.delete(db.collection('personen').doc(p.id));
+    batch.delete(db.collection('zuteilung').doc(p.id));
+    S.alleWuensche.filter(w => w.owner === p.id).forEach(w => batch.delete(db.collection('wuensche').doc(w.id)));
+    const ausn = (S.einstellungen.ausnahmen || []).filter(a => a.a !== p.id && a.b !== p.id);
+    batch.update(db.collection('einstellungen').doc('allgemein'), { ausnahmen: ausn });
+    await batch.commit();
+    alert(`${p.name} wurde gelöscht. Das Login selbst entfernst du in der Firebase-Konsole unter Authentication.` +
+      (S.einstellungen.gezogen ? ' Die Ziehung ist jetzt unvollständig – bitte zurücksetzen und neu losen.' : ''));
+  } catch (e) { console.warn(e); alert('Löschen hat nicht geklappt.'); }
+}
+
+$('ausnahmeHinzu').addEventListener('click', async () => {
+  const a = $('ausnahmeA').value, b = $('ausnahmeB').value;
+  if (!a || !b || a === b) return;
+  const ausn = (S.einstellungen.ausnahmen || []).slice();
+  if (ausn.some(x => (x.a === a && x.b === b) || (x.a === b && x.b === a))) return;
+  ausn.push({ a, b });
+  try { await db.collection('einstellungen').doc('allgemein').update({ ausnahmen: ausn }); } catch (e) { alert('Speichern hat nicht geklappt.'); }
+});
+
+async function ausnahmeEntfernen(i) {
+  const ausn = (S.einstellungen.ausnahmen || []).slice();
+  ausn.splice(i, 1);
+  try { await db.collection('einstellungen').doc('allgemein').update({ ausnahmen: ausn }); } catch (e) { alert('Speichern hat nicht geklappt.'); }
+}
+
+$('rahmenForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  try {
+    await db.collection('einstellungen').doc('allgemein').update({
+      datum: $('rahmenDatum').value || '',
+      budget: $('rahmenBudget').value.trim()
+    });
+    document.activeElement.blur();
+    zeigeMeldung($('rahmenErfolg'), 'Gespeichert.');
+    setTimeout(() => zeigeMeldung($('rahmenErfolg'), ''), 2500);
+  } catch (err) { alert('Speichern hat nicht geklappt.'); }
+});
+
+/* ---------- Ziehung ---------- */
+
+// Gibt {schenker: empfänger} zurück oder null, wenn die Ausnahmen keine Ziehung erlauben.
+function ziehungBerechnen(ids, ausnahmen) {
+  const verboten = new Set();
+  (ausnahmen || []).forEach(x => { verboten.add(x.a + '|' + x.b); verboten.add(x.b + '|' + x.a); });
+  const erlaubt = (g, e) => g !== e && !verboten.has(g + '|' + e);
+  // Bevorzugt ein einziger Kreis (A→B→C→…→A), sonst eine beliebige gültige Zuordnung.
+  for (let i = 0; i < 20000; i++) {
+    const kreis = sattolo(ids);
+    if (kreis.every((g, k) => erlaubt(g, kreis[(k + 1) % kreis.length]))) {
+      const z = {};
+      kreis.forEach((g, k) => { z[g] = kreis[(k + 1) % kreis.length]; });
+      return z;
+    }
+  }
+  for (let i = 0; i < 20000; i++) {
+    const empf = mischen(ids);
+    if (ids.every((g, k) => erlaubt(g, empf[k]))) {
+      const z = {};
+      ids.forEach((g, k) => { z[g] = empf[k]; });
+      return z;
+    }
+  }
+  return null;
+}
+
+$('auslosen').addEventListener('click', async () => {
+  const ids = Object.keys(S.personen);
+  zeigeMeldung($('ziehungFehler'), '');
+  if (ids.length < 3) { zeigeMeldung($('ziehungFehler'), 'Für eine Ziehung braucht es mindestens 3 Personen.'); return; }
+  const pool = mischen(CODENAMEN).concat(mischen(CODENAMEN_RESERVE));
+  if (ids.length > pool.length) { zeigeMeldung($('ziehungFehler'), 'Es gibt zu wenige Codenamen. Bitte die Liste in app.js erweitern.'); return; }
+  if (!confirm(`Jetzt für ${ids.length} Personen auslosen?`)) return;
+
+  let z = ziehungBerechnen(ids, S.einstellungen.ausnahmen);
+  if (!z) { zeigeMeldung($('ziehungFehler'), 'Mit diesen Ausnahmen ist keine Ziehung möglich. Entferne eine Ausnahme und versuch es nochmal.'); return; }
+
+  const codename = {};
+  ids.forEach((id, i) => { codename[id] = pool[i].name; });
+  const schenkerVon = {};
+  Object.entries(z).forEach(([g, e]) => { schenkerVon[e] = g; });
+
+  const knopf = $('auslosen');
+  knopf.disabled = true;
+  try {
+    const batch = db.batch();
+    ids.forEach(id => {
+      batch.set(db.collection('zuteilung').doc(id), {
+        empfaenger: z[id],
+        codename: codename[id],
+        schenkerCodename: codename[schenkerVon[id]],
+        gezogenAm: FV.serverTimestamp()
+      });
+    });
+    batch.update(db.collection('einstellungen').doc('allgemein'), { gezogen: true, anzahl: ids.length });
+    await batch.commit();
+  } catch (e) {
+    console.warn(e);
+    zeigeMeldung($('ziehungFehler'), 'Die Ziehung konnte nicht gespeichert werden.');
+  } finally {
+    // Ergebnis nicht im Speicher behalten
+    z = null;
+    knopf.disabled = false;
+  }
+});
+
+$('ziehungZuruecksetzen').addEventListener('click', async () => {
+  if (!confirm('Ziehung wirklich zurücksetzen? Alle Zuordnungen und Codenamen gehen verloren.')) return;
+  try {
+    const batch = db.batch();
+    Object.keys(S.personen).forEach(id => batch.delete(db.collection('zuteilung').doc(id)));
+    batch.update(db.collection('einstellungen').doc('allgemein'), { gezogen: false, anzahl: 0 });
+    await batch.commit();
+  } catch (e) { console.warn(e); alert('Zurücksetzen hat nicht geklappt.'); }
+});
+
+kontoFormLeeren();
+bildAnzeigen();

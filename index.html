@@ -1,83 +1,237 @@
 <!doctype html>
 <html lang="de">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Wichteln - Secret Santa</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#5E7457">
+  <title>Wichteln</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=Nunito+Sans:wght@400;600;700&display=swap">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header>
-    <h1>Wichteln</h1>
-    <div id="nav"></div>
-  </header>
+  <div class="schnee" id="schnee" aria-hidden="true"></div>
 
-  <main>
-    <section id="auth">
-      <div id="loginBox">
-        <h2>Anmelden</h2>
-        <form id="loginForm">
-          <label>Benutzername<input name="username" required></label>
-          <label>Passwort<input type="password" name="password" required></label>
-          <div class="row"><button type="submit">Anmelden</button> <button type="button" id="showRegister">Registrieren</button></div>
-        </form>
-      </div>
+  <main class="seite">
 
-      <div id="registerBox" class="hidden">
-        <h2>Registrieren</h2>
-        <form id="registerForm">
-          <label>Benutzername<input name="username" required></label>
-          <label>Passwort<input type="password" name="password" required></label>
-          <label><input type="checkbox" name="isAdmin" id="isAdminCheckbox"> Als Admin registrieren (nur für Organisator)</label>
-          <label id="adminKeyLabel" class="hidden">Organisator-Passwort<input type="password" name="adminKey" id="adminKeyInput"></label>
-          <div class="row"><button type="submit">Registrieren</button> <button type="button" id="showLogin">Zurück</button></div>
-        </form>
-      </div>
-
+    <!-- Laden -->
+    <section id="ansichtLaden" class="ansicht">
+      <p class="hinweis-hell">Einen Moment …</p>
     </section>
 
-    <section id="dashboard" class="hidden">
-      <h2 id="welcome"></h2>
-
-      <div id="assignedArea">
-        <h3 id="assignedHeader">Person, die du beschenkst</h3>
-        <div id="assignedInfo">Noch keine Zuordnung vorhanden.</div>
+    <!-- Anmelden -->
+    <section id="ansichtLogin" class="ansicht" hidden>
+      <div class="login-kopf">
+        <svg class="logo-gross" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="9" width="18" height="12" rx="2"/><path d="M3 13h18M12 9v12M12 9c-1.5-3.5-5-4-5-1.5S10 9 12 9zM12 9c1.5-3.5 5-4 5-1.5S14 9 12 9z"/></svg>
+        <h1>Wichteln</h1>
       </div>
-
-      <div id="userArea">
-        <h3>Deine Wunschliste</h3>
-        <form id="wishlistForm">
-          <textarea id="wishlistInput" placeholder="Eine Wunschliste, ein Item pro Zeile"></textarea>
-          <div class="row"><button type="submit">Speichern</button></div>
-        </form>
-      </div>
-
-
-      <div class="row"><button id="logoutBtn">Abmelden</button></div>
-
-      <div id="adminArea" class="hidden">
-        <h3>Admin-Panel</h3>
-        <p>Adminansicht: https://console.firebase.google.com/u/0/project/wichteln-6fe74/firestore/databases/-default-/data/~2Fshared~2Fwichteln</p>
-        <h4>Aktuelle (kodierte) Pairs</h4>
-        <pre id="pairsView">(noch keine Wünsche geäußert)</pre>
-        <div class="row" style="margin-top:8px">
-          <button id="drawBtn">Ziehung durchführen</button>
-          <button id="exportPairs">Exportieren</button>
-          <button id="resetPairs">Pairs zurücksetzen</button>
+      <form id="loginForm" class="karte formular">
+        <h2>Anmelden</h2>
+        <div class="feld">
+          <label for="loginName">Name</label>
+          <input id="loginName" name="name" autocomplete="username" required>
         </div>
+        <div class="feld">
+          <label for="loginPw">Passwort</label>
+          <input id="loginPw" name="passwort" type="password" autocomplete="current-password" required>
+        </div>
+        <p class="fehler" id="loginFehler" hidden></p>
+        <button type="submit" class="knopf knopf-haupt">Los geht's</button>
+      </form>
+      <p class="hinweis-hell zentriert">Deine Zugangsdaten bekommst du von Toni.</p>
+    </section>
+
+    <!-- Startseite -->
+    <section id="ansichtStart" class="ansicht" hidden>
+      <header class="kopf">
+        <div class="marke">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="9" width="18" height="12" rx="2"/><path d="M3 13h18M12 9v12M12 9c-1.5-3.5-5-4-5-1.5S10 9 12 9zM12 9c1.5-3.5 5-4 5-1.5S14 9 12 9z"/></svg>
+          <span>Wichteln</span>
+        </div>
+        <div class="kopf-aktionen">
+          <button type="button" class="knopf-rand" id="zurOrga" hidden>Organisation</button>
+          <button type="button" class="knopf-rand" id="abmelden">Abmelden</button>
+        </div>
+      </header>
+
+      <div class="begruessung">
+        <h1 id="begruessung">Hallo!</h1>
+        <p id="meinCodename" hidden></p>
       </div>
+
+      <div class="eckdaten">
+        <div><span>Datum</span><strong id="anzeigeDatum">–</strong></div>
+        <div><span>Budget</span><strong id="anzeigeBudget">–</strong></div>
+      </div>
+
+      <!-- Vor der Ziehung -->
+      <section class="karte" id="nochNichtGezogen">
+        <h2 class="karte-titel">Die Ziehung kommt bald</h2>
+        <p class="leise">Sobald gelost wurde, siehst du hier, wen du beschenkst. Deine Wunschliste kannst du schon jetzt schreiben.</p>
+      </section>
+
+      <!-- Du beschenkst -->
+      <section class="karte" id="duBeschenkst" hidden>
+        <div class="etikett">Du beschenkst</div>
+        <h2 class="empfaenger" id="empfaengerName"></h2>
+        <div class="trenner"></div>
+        <h3 class="unterkopf" id="empfaengerListeTitel">Wunschliste</h3>
+        <ul class="wunschliste" id="empfaengerListe"></ul>
+        <p class="leise" id="empfaengerLeer" hidden>Noch keine Wünsche eingetragen. Schau später nochmal vorbei!</p>
+      </section>
+
+      <!-- Dich beschenkt -->
+      <section class="karte karte-creme" id="dichBeschenkt" hidden>
+        <div class="glocke">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/><path d="M12 3v2"/></svg>
+        </div>
+        <div>
+          <div class="fett">Dich beschenkt: <span id="schenkerCodename"></span></div>
+          <div class="leise-dunkel">Wer da wohl dahintersteckt?</div>
+        </div>
+      </section>
+
+      <!-- Meine Wunschliste -->
+      <section class="karte">
+        <h2 class="karte-titel">Deine Wunschliste</h2>
+        <p class="leise" id="meineListeHinweis">Deine Wichtelperson sieht diese Liste.</p>
+        <ul class="wunschliste" id="meineListe"></ul>
+        <p class="leise" id="meineListeLeer">Noch keine Wünsche. Fang einfach an!</p>
+
+        <form id="wunschForm" class="wunsch-form">
+          <h3 class="unterkopf" id="wunschFormTitel">Neuer Wunsch</h3>
+          <div class="feld">
+            <label for="wunschText">Was wünschst du dir?</label>
+            <input id="wunschText" maxlength="200" placeholder="z. B. Neue Kopfhörer" required>
+          </div>
+          <div class="feld">
+            <label for="wunschLink">Link <span class="optional">(optional)</span></label>
+            <input id="wunschLink" type="url" inputmode="url" placeholder="https://…">
+          </div>
+          <div class="feld">
+            <span class="label">Bild <span class="optional">(optional)</span></span>
+            <label class="knopf-gestrichelt" id="bildWaehlen">
+              Bild auswählen
+              <input id="wunschBild" type="file" accept="image/*" class="unsichtbar">
+            </label>
+            <div class="bild-gewaehlt" id="bildGewaehlt" hidden>
+              <img id="bildVorschau" alt="">
+              <span>Bild ausgewählt</span>
+              <button type="button" class="knopf-text" id="bildEntfernen">Entfernen</button>
+            </div>
+          </div>
+          <p class="fehler" id="wunschFehler" hidden></p>
+          <div class="knopf-reihe">
+            <button type="submit" class="knopf knopf-haupt" id="wunschSpeichern">Hinzufügen</button>
+            <button type="button" class="knopf knopf-zweit" id="wunschAbbrechen" hidden>Abbrechen</button>
+          </div>
+        </form>
+      </section>
+    </section>
+
+    <!-- Organisation -->
+    <section id="ansichtOrga" class="ansicht" hidden>
+      <header class="kopf">
+        <button type="button" class="knopf-zurueck" id="zurStart">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+          Meine Seite
+        </button>
+      </header>
+      <h1 class="seitentitel">Organisation</h1>
+
+      <section class="karte">
+        <div class="titel-zeile">
+          <h2 class="karte-titel">Teilnehmende</h2>
+          <span class="leise" id="anzahlKonten"></span>
+        </div>
+        <p class="leise" id="wunschStatus"></p>
+        <div class="balken"><div id="wunschBalken"></div></div>
+        <ul class="personen" id="personenListe"></ul>
+      </section>
+
+      <section class="karte">
+        <form id="kontoForm" class="formular">
+          <h2 class="karte-titel" id="kontoFormTitel">Konto anlegen</h2>
+          <div class="feld">
+            <label for="kontoName">Name</label>
+            <input id="kontoName" maxlength="40" placeholder="z. B. Tante Ute" required>
+          </div>
+          <div class="feld">
+            <label for="kontoAnrede">Anrede</label>
+            <select id="kontoAnrede">
+              <option value="ihre">„Ihre Wunschliste“</option>
+              <option value="seine">„Seine Wunschliste“</option>
+              <option value="name">„Wunschliste von [Name]“</option>
+            </select>
+          </div>
+          <div class="feld" id="kontoPwFeld">
+            <label for="kontoPw">Passwort</label>
+            <div class="eingabe-reihe">
+              <input id="kontoPw" minlength="6" required>
+              <button type="button" class="knopf knopf-zweit" id="pwWuerfeln">Neu würfeln</button>
+            </div>
+          </div>
+          <p class="fehler" id="kontoFehler" hidden></p>
+          <p class="erfolg" id="kontoErfolg" hidden></p>
+          <div class="knopf-reihe">
+            <button type="submit" class="knopf knopf-gruen" id="kontoSpeichern">Konto anlegen</button>
+            <button type="button" class="knopf knopf-zweit" id="kontoAbbrechen" hidden>Abbrechen</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="karte">
+        <h2 class="karte-titel">Ausnahmen</h2>
+        <p class="leise">Diese Paare ziehen sich nicht gegenseitig.</p>
+        <div class="chips" id="ausnahmenListe"></div>
+        <div class="ausnahme-neu">
+          <label for="ausnahmeA" class="unsichtbar">Erste Person</label>
+          <select id="ausnahmeA"></select>
+          <span>&amp;</span>
+          <label for="ausnahmeB" class="unsichtbar">Zweite Person</label>
+          <select id="ausnahmeB"></select>
+          <button type="button" class="knopf knopf-zweit" id="ausnahmeHinzu">Hinzufügen</button>
+        </div>
+      </section>
+
+      <section class="karte">
+        <form id="rahmenForm" class="formular">
+          <h2 class="karte-titel">Rahmen</h2>
+          <div class="zwei-spalten">
+            <div class="feld">
+              <label for="rahmenDatum">Datum</label>
+              <input id="rahmenDatum" type="date">
+            </div>
+            <div class="feld">
+              <label for="rahmenBudget">Budget</label>
+              <input id="rahmenBudget" maxlength="30" placeholder="z. B. 30 €">
+            </div>
+          </div>
+          <p class="erfolg" id="rahmenErfolg" hidden>Gespeichert.</p>
+          <button type="submit" class="knopf knopf-zweit">Speichern</button>
+        </form>
+      </section>
+
+      <section class="karte karte-creme ziehung">
+        <h2 class="karte-titel">Ziehung</h2>
+        <p id="ziehungStatus">Wunschlisten bleiben nach der Ziehung offen. Auch du siehst nicht, wer wen gezogen hat.</p>
+        <p class="fehler" id="ziehungFehler" hidden></p>
+        <button type="button" class="knopf knopf-haupt" id="auslosen">Jetzt auslosen</button>
+        <button type="button" class="knopf-text dunkel" id="ziehungZuruecksetzen">Ziehung zurücksetzen</button>
+      </section>
     </section>
   </main>
 
-  <footer>
-    <small></small>
-  </footer>
+  <dialog id="bildDialog" class="bild-dialog">
+    <img id="bildGross" alt="">
+    <p id="bildTitel"></p>
+    <form method="dialog"><button class="knopf-rand">Schließen</button></form>
+  </dialog>
 
-  <!-- Optional: Wenn du Firebase Firestore für geteilte/synchronisierte Daten nutzen willst,
-    erstelle eine Datei `firebase-config.js` basierend auf `firebase-config.js.example`.
-    Dann wird die App automatisch Firestore verwenden. -->
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
   <script src="firebase-config.js"></script>
   <script src="app.js"></script>
 </body>
