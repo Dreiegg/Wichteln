@@ -215,9 +215,14 @@
 
       <section class="karte karte-creme ziehung">
         <h2 class="karte-titel">Ziehung</h2>
-        <p id="ziehungStatus">Wunschlisten bleiben nach der Ziehung offen. Auch du siehst nicht, wer wen gezogen hat.</p>
+        <p id="ziehungStatus">Wunschlisten bleiben nach der Ziehung offen.</p>
         <p class="fehler" id="ziehungFehler" hidden></p>
         <button type="button" class="knopf knopf-haupt" id="auslosen">Jetzt auslosen</button>
+        <details class="paare" id="paareBox" hidden>
+          <summary>Paare anzeigen</summary>
+          <p class="paare-hinweis">Auf einen Codenamen tippen, um den echten Namen zu sehen.</p>
+          <ul id="paareListe"></ul>
+        </details>
         <button type="button" class="knopf-text dunkel" id="ziehungZuruecksetzen">Ziehung zurücksetzen</button>
       </section>
     </section>

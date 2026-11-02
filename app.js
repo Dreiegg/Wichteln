@@ -562,11 +562,53 @@ function renderOrga() {
   // Ziehung
   const gezogen = !!S.einstellungen.gezogen;
   $('ziehungStatus').textContent = gezogen
-    ? `Die Ziehung ist gelaufen (${S.einstellungen.anzahl || liste.length} Personen). Wunschlisten bleiben offen. Auch du siehst nicht, wer wen gezogen hat.`
-    : 'Wunschlisten bleiben nach der Ziehung offen. Auch du siehst nicht, wer wen gezogen hat.';
+    ? `Die Ziehung ist gelaufen (${S.einstellungen.anzahl || liste.length} Personen). Wunschlisten bleiben offen.`
+    : 'Wunschlisten bleiben nach der Ziehung offen.';
   $('auslosen').hidden = gezogen;
   $('ziehungZuruecksetzen').hidden = !gezogen;
+  $('paareBox').hidden = !gezogen;
+  if (!gezogen) { $('paareBox').open = false; paareDaten = null; aufgedeckt.clear(); }
+  else if ($('paareBox').open) renderPaare();
 }
+
+/* ---------- Paare (zum Testen, standardmäßig eingeklappt) ---------- */
+
+let paareDaten = null;
+const aufgedeckt = new Set();
+
+async function paareLaden() {
+  $('paareListe').replaceChildren(el('li', { class: 'paar', text: 'Lädt …' }));
+  try {
+    const snap = await db.collection('zuteilung').get();
+    paareDaten = snap.docs.map(d => Object.assign({ id: d.id }, d.data()));
+    renderPaare();
+  } catch (e) {
+    console.warn(e);
+    $('paareListe').replaceChildren(el('li', { class: 'paar', text: 'Konnte nicht geladen werden. Sind die neuen Sicherheitsregeln veröffentlicht?' }));
+  }
+}
+
+function renderPaare() {
+  if (!paareDaten) return;
+  const codeVon = {};
+  paareDaten.forEach(z => { codeVon[z.id] = z.codename; });
+  const knopf = id => {
+    const offen = aufgedeckt.has(id);
+    const name = S.personen[id] ? S.personen[id].name : 'Gelöschte Person';
+    return el('button', {
+      type: 'button', class: 'paar-name', 'aria-pressed': String(offen),
+      onclick: () => { offen ? aufgedeckt.delete(id) : aufgedeckt.add(id); renderPaare(); }
+    }, offen ? name : codenameElement(codeVon[id] || '?'));
+  };
+  const sortiert = paareDaten.slice().sort((a, b) => (a.codename || '').localeCompare(b.codename || '', 'de'));
+  $('paareListe').replaceChildren(...sortiert.map(z =>
+    el('li', { class: 'paar' }, knopf(z.id), el('span', { class: 'paar-pfeil', 'aria-label': 'beschenkt', text: '→' }), knopf(z.empfaenger))));
+}
+
+$('paareBox').addEventListener('toggle', () => {
+  if ($('paareBox').open) paareLaden();
+  else aufgedeckt.clear();
+});
 
 function kontoFormLeeren() {
   bearbeitePerson = null;
@@ -721,7 +763,7 @@ $('auslosen').addEventListener('click', async () => {
   if (ids.length > pool.length) { zeigeMeldung($('ziehungFehler'), 'Es gibt zu wenige Codenamen. Bitte die Liste in app.js erweitern.'); return; }
   if (!confirm(`Jetzt für ${ids.length} Personen auslosen?`)) return;
 
-  let z = ziehungBerechnen(ids, S.einstellungen.ausnahmen);
+  const z = ziehungBerechnen(ids, S.einstellungen.ausnahmen);
   if (!z) { zeigeMeldung($('ziehungFehler'), 'Mit diesen Ausnahmen ist keine Ziehung möglich. Entferne eine Ausnahme und versuch es nochmal.'); return; }
 
   const codename = {};
@@ -743,12 +785,12 @@ $('auslosen').addEventListener('click', async () => {
     });
     batch.update(db.collection('einstellungen').doc('allgemein'), { gezogen: true, anzahl: ids.length });
     await batch.commit();
+    aufgedeckt.clear();
+    if ($('paareBox').open) paareLaden();
   } catch (e) {
     console.warn(e);
     zeigeMeldung($('ziehungFehler'), 'Die Ziehung konnte nicht gespeichert werden.');
   } finally {
-    // Ergebnis nicht im Speicher behalten
-    z = null;
     knopf.disabled = false;
   }
 });
